@@ -1,0 +1,33 @@
+{
+  "expectation_suite_name": "silver_ohlcv_suite",
+  "expectations": [
+    {
+      "expectation_type": "expect_column_values_to_not_be_null",
+      "kwargs": {"column": "open_time"}
+    },
+    {
+      "expectation_type": "expect_column_values_to_not_be_null",
+      "kwargs": {"column": "symbol"}
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_between",
+      "kwargs": {"column": "open", "min_value": 0, "max_value": 1e12}
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_between",
+      "kwargs": {"column": "high", "min_value": 0, "max_value": 1e12}
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_between",
+      "kwargs": {"column": "low", "min_value": 0, "max_value": 1e12}
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_between",
+      "kwargs": {"column": "close", "min_value": 0, "max_value": 1e12}
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_between",
+      "kwargs": {"column": "volume", "min_value": 0, "max_value": 1e20}
+    }
+  ]
+}

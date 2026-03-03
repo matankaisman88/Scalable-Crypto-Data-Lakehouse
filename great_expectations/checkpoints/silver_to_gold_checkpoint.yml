@@ -1,0 +1,8 @@
+# Great Expectations Checkpoint: Silver to Gold
+# Validates Silver DataFrame before Gold aggregation
+# Used by quality_checks.validate_silver (Spark-based implementation)
+
+name: silver_to_gold_checkpoint
+config_version: 1.0
+expectation_suite_name: silver_ohlcv_suite
+validations: []

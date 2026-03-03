@@ -1,0 +1,32 @@
+# Scalable Crypto Data Lakehouse - Configuration
+# All paths and Spark tunings externalized (no hardcoded strings in jobs)
+
+paths:
+  raw: /data/raw
+  bronze: /data/bronze
+  silver: /data/silver
+  gold: /data/gold
+  spark_events: /data/spark-events
+  metadata: /data/metadata
+
+# Binance Vision S3
+binance:
+  s3_base: s3://data.binance.vision
+  klines_prefix: data/spot/daily/klines
+
+# Spark tuning - AQE enabled for scale, 200 shuffle partitions
+# AQE coalesces at runtime to prevent OOM on 4GB executor
+spark:
+  executor_memory: 1g
+  memory_fraction: 0.6
+  memory_storage_fraction: 0.5
+  shuffle_partitions: 200
+  adaptive_enabled: true
+  serializer: org.apache.spark.serializer.KryoSerializer
+  event_log_enabled: true
+  event_log_dir: /opt/spark-events
+
+# Great Expectations
+gx:
+  checkpoint_name: silver_to_gold_checkpoint
+  expectations_suite: silver_ohlcv_suite
