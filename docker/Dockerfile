@@ -10,7 +10,10 @@ RUN pip install --no-cache-dir \
     "great-expectations>=0.18.0" \
     "python-dotenv>=1.0.0" \
     "pyyaml>=6.0" \
-    "boto3>=1.28.0"
+    "boto3>=1.28.0" \
+    "streamlit>=1.36.0" \
+    "plotly>=5.20.0" \
+    "deltalake>=0.17.0"
 
 USER ${spark_uid}
 
@@ -23,4 +26,4 @@ ENV SPARK_HOME=/opt/spark
 # Event log for History Server
 ENV SPARK_HISTORY_OPTS="-Dspark.history.fs.logDirectory=/opt/spark-events"
 
-EXPOSE 7077 8080 8081 18080
+EXPOSE 7077 8080 8081 18080 8501

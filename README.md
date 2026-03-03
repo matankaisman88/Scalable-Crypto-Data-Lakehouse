@@ -114,6 +114,16 @@ Open `http://localhost:18080` after job completion.
   - Ensure `SPARK_WORKER_MEMORY` / container memory limits are set higher than executor memory.
 - Alternatively, run Silver/Gold incrementally by passing an `ingestion_date` argument so they operate on the latest batch instead of the entire history, which reduces memory pressure.
 
+## Dashboard
+
+- **Start the dashboard** (after running at least one Gold job so the Gold table is populated):
+
+```bash
+docker compose -f docker/docker-compose.yml up -d dashboard
+```
+
+- **Access the UI** at `http://localhost:8501` to explore 5-minute OHLCV candlesticks from the Gold Delta table with symbol/date filters, a dark-themed chart, and basic metrics.
+
 ## Project Structure
 
 ```

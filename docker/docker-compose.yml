@@ -73,6 +73,26 @@ services:
     networks:
       - spark-net
 
+  dashboard:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: crypto-lakehouse-spark:latest
+    container_name: dashboard
+    depends_on:
+      - spark-master
+    environment:
+      - PYTHONPATH=/opt/spark-app
+    working_dir: /opt/spark-app
+    volumes:
+      - ../data:/data
+      - ../data/spark-events:/opt/spark-events
+      - ../src:/opt/spark-app/src
+      - ../config:/opt/spark-app/config
+    ports:
+      - "8501:8501"
+    command: streamlit run src/dashboard/app.py --server.port=8501 --server.address=0.0.0.0
+
   ingest:
     image: amazon/aws-cli:latest
     container_name: ingest
