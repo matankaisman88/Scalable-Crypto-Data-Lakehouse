@@ -1,4 +1,6 @@
-from datetime import timedelta
+from datetime import date, timedelta
+from pathlib import Path
+from typing import List
 
 import pandas as pd
 import streamlit as st
@@ -34,14 +36,55 @@ def _infer_window_seconds(df: pd.DataFrame) -> int:
 
 
 @st.cache_data(show_spinner=False)
-def load_gold_dataframe() -> pd.DataFrame:
+def load_symbols_from_metadata() -> List[str]:
+    """Load available symbols from coin_metadata.csv without touching the Gold table."""
+    paths = get_paths()
+    metadata_path = paths.get("metadata")
+    if not metadata_path:
+        return []
+    csv_path = Path(metadata_path) / "coin_metadata.csv"
+    if not csv_path.exists():
+        return []
+    meta = pd.read_csv(csv_path)
+    if "symbol" not in meta.columns:
+        return []
+    return sorted(meta["symbol"].dropna().astype(str).unique().tolist())
+
+
+MAX_DAYS_1S = 30  # Guardrail: prevent OOM when loading 1s data (fits ~4GB limit)
+
+
+def _date_range(start: date, end: date) -> List[str]:
+    """Generate list of date strings (YYYY-MM-DD) from start to end inclusive."""
+    dates = []
+    d = start
+    while d <= end:
+        dates.append(d.strftime("%Y-%m-%d"))
+        d += timedelta(days=1)
+    return dates
+
+
+@st.cache_data(show_spinner=False)
+def load_gold_dataframe(
+    symbol: str,
+    start_date: date,
+    end_date: date,
+) -> pd.DataFrame:
+    """Load Gold Delta table for symbol + date range using partition pruning."""
     paths = get_paths()
     gold_path = paths.get("gold")
     if not gold_path:
         raise RuntimeError("Gold path not found in config paths.")
 
     table = DeltaTable(gold_path)
-    df = table.to_pandas()
+    # Partition pruning: symbol + date range (use "in" for dates; delta-rs supports =, !=, in, not in)
+    date_list = _date_range(start_date, end_date)
+    df = table.to_pandas(
+        partitions=[
+            ("symbol", "=", symbol),
+            ("date", "in", date_list),
+        ]
+    )
 
     if "timestamp" in df.columns:
         # Gold timestamp is stored as Unix epoch in microseconds
@@ -118,11 +161,56 @@ def main() -> None:
         unsafe_allow_html=True,
     )
 
-    with st.spinner("Loading Gold Delta table..."):
-        df = load_gold_dataframe()
+    st.sidebar.header("Filters")
+    st.sidebar.caption("Refine the data displayed in the chart and table.")
+
+    symbols = load_symbols_from_metadata()
+    if not symbols:
+        st.warning(
+            "No symbols found in data/metadata/coin_metadata.csv. "
+            "Add symbols there or run the Bronze ingestion first."
+        )
+        return
+
+    symbol = st.sidebar.selectbox("Symbol", symbols, index=0)
+    if not symbol:
+        st.info("Select a symbol to load data.")
+        return
+
+    # Date range BEFORE load: default last 7 days to keep memory manageable
+    st.sidebar.subheader("Date range")
+    st.sidebar.caption(f"Max {MAX_DAYS_1S} days for 1s data (memory limit).")
+    today = date.today()
+    default_end = today
+    default_start = today - timedelta(days=7)
+    start_date = st.sidebar.date_input(
+        "Start date",
+        value=default_start,
+        min_value=date(2020, 1, 1),
+        max_value=today,
+    )
+    end_date = st.sidebar.date_input(
+        "End date",
+        value=default_end,
+        min_value=date(2020, 1, 1),
+        max_value=today,
+    )
+    if start_date > end_date:
+        st.error("Start date must be before or equal to end date.")
+        return
+    span_days = (end_date - start_date).days + 1
+    if span_days > MAX_DAYS_1S:
+        st.error(
+            f"Date range is {span_days} days. Maximum {MAX_DAYS_1S} days allowed for 1s data "
+            f"to stay within 4GB memory limit. Please select a shorter range."
+        )
+        return
+
+    with st.spinner(f"Loading Gold data for {symbol} ({start_date} to {end_date})..."):
+        df = load_gold_dataframe(symbol, start_date, end_date)
 
     if df.empty:
-        st.warning("Gold table is empty. Run the Gold job first.")
+        st.warning(f"No Gold data for {symbol} in {start_date}–{end_date}. Run the Gold job first.")
         return
 
     window_sec = _infer_window_seconds(df)
@@ -137,34 +225,8 @@ def main() -> None:
         st.dataframe(df.head())
         return
 
-    st.sidebar.header("Filters")
-    st.sidebar.caption("Refine the data displayed in the chart and table.")
-
-    symbols = sorted(df["symbol"].dropna().unique().tolist())
-    default_symbol = symbols[0] if symbols else None
-    symbol = st.sidebar.selectbox("Symbol", symbols, index=0 if default_symbol else None)
-
-    symbol_df = df[df["symbol"] == symbol] if symbol else df
-    start_date = end_date = None
-
-    if "date" in symbol_df.columns:
-        dates = sorted(symbol_df["date"].dropna().unique().tolist())
-        if dates:
-            # Default to last 30 days to avoid MessageSizeError
-            cutoff = max(dates) - timedelta(days=30) if dates else None
-            default_start = next((d for d in dates if d >= cutoff), dates[0])
-            default_end = dates[-1]
-            start_date, end_date = st.sidebar.select_slider(
-                "Date range",
-                options=dates,
-                value=(default_start, default_end),
-            )
-            mask = (symbol_df["date"] >= start_date) & (symbol_df["date"] <= end_date)
-            filtered = symbol_df[mask]
-        else:
-            filtered = symbol_df
-    else:
-        filtered = symbol_df
+    # df is already filtered by symbol + date (partition pruning)
+    filtered = df
 
     # Price range filter
     st.sidebar.subheader("Price & Volume")

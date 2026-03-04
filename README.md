@@ -134,7 +134,11 @@ Open `http://localhost:18080` after job completion.
 docker compose -f docker/docker-compose.yml up -d dashboard
 ```
 
-- **Access the UI** at `http://localhost:8501` to explore OHLCV candlesticks from the Gold Delta table. The dashboard infers resolution (1s, 1m, 5m) from the data and displays it in the title. Features a light, modern design with high-contrast colors. Filters: symbol, date range, price range, min volume, and table sort order. Includes basic metrics, candlestick chart, and **Download as CSV** to export filtered data.
+- **Access the UI** at `http://localhost:8501` to explore OHLCV candlesticks from the Gold Delta table. The dashboard infers resolution (1s, 1m, 5m) from the data and displays it in the title. Features a light, modern design with high-contrast colors.
+
+- **Memory-optimized loading** — Uses predicate pushdown on the Gold Delta table: symbols come from `data/metadata/coin_metadata.csv` (no full-table scan), and data is loaded only for the selected symbol and date range. Date range is chosen *before* load (default: last 7 days). A 30-day guardrail prevents OOM when loading 1s data on 4GB executors.
+
+- **Filters**: symbol, date range (required before load), price range, min volume, and table sort order. Includes basic metrics, candlestick chart, and **Download as CSV** to export filtered data.
 
 ## Project Structure
 
