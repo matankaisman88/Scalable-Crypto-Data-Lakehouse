@@ -9,7 +9,7 @@ Binance S3 → Ingest (aws-cli) → Raw CSV/ZIP
     → Bronze (Delta, partition by ingestion_date)
     → Silver (Dedupe, broadcast join, MERGE)
     → GX Validation
-    → Gold (5-min OHLCV, incremental MERGE, OPTIMIZE Z-ORDER)
+    → Gold (OHLCV, resolution follows source: 1s→1s, 1m→1m, 5m→5m; incremental MERGE, OPTIMIZE Z-ORDER)
 ```
 
 ### Medallion Layers
@@ -18,7 +18,9 @@ Binance S3 → Ingest (aws-cli) → Raw CSV/ZIP
 |-------|---------|--------------|
 | Bronze | Raw ingestion, minimal transform | `ingestion_date` |
 | Silver | Deduplication, metadata join, MERGE | `symbol`, `date` |
-| Gold | 5-min OHLCV, incremental MERGE | `symbol`, `date` |
+| Gold | OHLCV (1s/1m/5m from source), incremental MERGE | `symbol`, `date` |
+
+**Quality checks** — Silver data is validated (non-null timestamps/symbols, positive prices/volume) inside the Gold job before aggregation; no separate pipeline step.
 
 ### Key Design Decisions
 
@@ -36,6 +38,10 @@ Binance S3 → Ingest (aws-cli) → Raw CSV/ZIP
 
 - Silver: match on `(symbol, open_time)` — re-runs do not create duplicates
 - Gold: match on `(symbol, timestamp)` — incremental load preserves target Z-ORDER
+
+**Binance Vision timestamp format**
+
+- Raw kline CSVs use `open_time` in **microseconds** (not milliseconds). Silver/Gold derive dates and windows from source resolution.
 
 **History Server**
 
@@ -61,6 +67,12 @@ Optionally override defaults via environment variables, for example:
 SYMBOL=BTCUSDT RESOLUTION=1m DATE_PATTERN=2024-01 ./scripts/fetch_data.sh
 ```
 
+**1s ingestion** (for 2026):
+
+1. Fetch 1s data: `RESOLUTION=1s DATE_PATTERN=2026 ./scripts/fetch_data.sh`
+2. Run pipeline: `./scripts/run_pipeline.sh` — Gold follows source resolution (1s→1s, 1m→1m)
+3. Dashboard presents detected resolution at `http://localhost:8501`
+
 ### 2. Start Spark Cluster
 
 ```bash
@@ -72,7 +84,7 @@ docker compose -f docker/docker-compose.yml up -d spark-master spark-worker hist
 #### Git Bash / WSL / Linux / macOS
 
 ```bash
-./scripts/run_bronze.sh              # Bronze only (Delta-enabled, Git Bash friendly)
+./scripts/run_bronze.sh [YYYY-MM-DD] # Bronze only (optional ingestion_date; defaults to today)
 ./scripts/run_silver.sh [YYYY-MM-DD] # Silver only (optional ingestion_date)
 ./scripts/run_gold.sh   [YYYY-MM-DD] # Gold only (optional ingestion_date)
 
@@ -93,7 +105,7 @@ docker compose -f docker/docker-compose.yml up -d spark-master spark-worker hist
 Or run Bronze locally (without Docker) with:
 
 ```bash
-PYTHONPATH=. python -m src.jobs.bronze_ingestion
+PYTHONPATH=. python -m src.jobs.bronze_ingestion [YYYY-MM-DD]
 ```
 
 ### 4. View History Server
@@ -122,7 +134,7 @@ Open `http://localhost:18080` after job completion.
 docker compose -f docker/docker-compose.yml up -d dashboard
 ```
 
-- **Access the UI** at `http://localhost:8501` to explore 5-minute OHLCV candlesticks from the Gold Delta table with symbol/date filters, a dark-themed chart, and basic metrics.
+- **Access the UI** at `http://localhost:8501` to explore OHLCV candlesticks from the Gold Delta table. The dashboard infers resolution (1s, 1m, 5m) from the data and displays it in the title. Features a light, modern design with high-contrast colors. Filters: symbol, date range, price range, min volume, and table sort order. Includes basic metrics, candlestick chart, and **Download as CSV** to export filtered data.
 
 ## Project Structure
 
@@ -131,6 +143,7 @@ docker compose -f docker/docker-compose.yml up -d dashboard
 /docker          Dockerfile, docker-compose.yml
 /src
   /jobs         bronze_ingestion, silver_transformation, gold_aggregations
+  /dashboard   Streamlit app for Gold OHLCV visualization
   /utils        schemas, spark_session, config_loader
   /quality      quality_checks, GX suites
 /scripts        fetch_data.sh, cleanup_raw.sh, run_bronze.sh, run_pipeline.sh

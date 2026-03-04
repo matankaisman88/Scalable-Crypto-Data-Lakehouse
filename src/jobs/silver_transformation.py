@@ -31,9 +31,10 @@ def run(spark: Optional[SparkSession] = None, ingestion_date: Optional[str] = No
     bronze = bronze.dropDuplicates(["symbol", "open_time"])
 
     # Cast: open_time -> timestamp for date derivation
+    # Binance Vision bulk CSV uses microseconds; to_timestamp expects seconds
     bronze = bronze.withColumn(
         "date",
-        to_date(to_timestamp(col("open_time").cast(LongType()) / 1000)),
+        to_date(to_timestamp(col("open_time").cast(LongType()) / 1_000_000)),
     ).withColumn("ingestion_ts", current_timestamp())
 
     # Load metadata and broadcast join

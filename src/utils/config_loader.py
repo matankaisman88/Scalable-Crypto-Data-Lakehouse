@@ -56,3 +56,10 @@ def get_binance_config() -> Dict[str, str]:
 def get_gx_config() -> Dict[str, str]:
     cfg = _load_config()
     return cfg.get("gx", {})
+
+
+def get_gold_window_seconds() -> int:
+    """Fallback window in seconds when Silver has no intervals to infer from."""
+    cfg = _load_config()
+    gold = cfg.get("gold", {})
+    return int(gold.get("window_seconds", 300))

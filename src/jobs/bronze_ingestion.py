@@ -3,14 +3,16 @@ Bronze Layer: Bulk raw CSV/ZIP to Delta.
 - Manual schema (no inferSchema)
 - Partition by ingestion_date only - no expensive timestamp parsing
 - Symbol extracted from file path via input_file_name()
+- Optional ingestion_date arg: use specific date for batch (e.g. 2024-01-01), else current_date
 """
 
+import sys
 import zipfile
 from pathlib import Path
 from typing import Optional
 
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import current_date, input_file_name, regexp_extract
+from pyspark.sql.functions import current_date, input_file_name, lit, regexp_extract, to_date
 
 from src.utils.config_loader import get_paths
 from src.utils.schemas import BRONZE_RAW_SCHEMA
@@ -30,7 +32,7 @@ def _extract_zips(raw_path: str) -> None:
             pass
 
 
-def run(spark: Optional[SparkSession] = None) -> None:
+def run(spark: Optional[SparkSession] = None, ingestion_date: Optional[str] = None) -> None:
     paths = get_paths()
     raw_path = paths["raw"]
     bronze_path = paths["bronze"]
@@ -57,8 +59,11 @@ def run(spark: Optional[SparkSession] = None) -> None:
         regexp_extract("file_path", r"/raw/([^/]+)/", 1),
     )
 
-    # ingestion_date = current date - no timestamp parsing, keep Bronze raw
-    df = df.withColumn("ingestion_date", current_date())
+    # ingestion_date: use arg if provided (e.g. 2024-01-01 for pipeline), else current date
+    if ingestion_date:
+        df = df.withColumn("ingestion_date", to_date(lit(ingestion_date)))
+    else:
+        df = df.withColumn("ingestion_date", current_date())
 
     # Drop helper column
     df = df.drop("file_path")
@@ -70,4 +75,5 @@ def run(spark: Optional[SparkSession] = None) -> None:
 
 
 if __name__ == "__main__":
-    run()
+    ingestion_date = sys.argv[1] if len(sys.argv) > 1 else None
+    run(ingestion_date=ingestion_date)

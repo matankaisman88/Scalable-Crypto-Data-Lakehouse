@@ -15,7 +15,7 @@ INGESTION_DATE="${1:-$(date -u +%Y-%m-%d)}"
 echo "Using ingestion_date=${INGESTION_DATE}"
 
 echo "Starting Bronze Ingestion..."
-./scripts/run_bronze.sh
+./scripts/run_bronze.sh "${INGESTION_DATE}"
 
 echo "Starting Silver Transformation (incremental)..."
 ./scripts/run_silver.sh "${INGESTION_DATE}"

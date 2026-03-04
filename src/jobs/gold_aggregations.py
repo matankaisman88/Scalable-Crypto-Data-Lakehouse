@@ -1,6 +1,7 @@
 """
-Gold Layer: 5-min OHLCV aggregation.
-- Incremental load: only process new batch from Silver
+Gold Layer: OHLCV pass-through (follows source resolution).
+- Infers Silver granularity from timestamp intervals
+- No aggregation: 1s→1s, 1m→1m, 5m→5m
 - MERGE only new batch into Gold (preserves Z-ORDER on target)
 - OPTIMIZE only newly merged partitions
 """
@@ -29,11 +30,29 @@ from pyspark.sql.functions import (
 from pyspark.sql.types import LongType
 
 from src.quality.quality_checks import validate_silver
-from src.utils.config_loader import get_paths
+from src.utils.config_loader import get_paths, get_gold_window_seconds
 from src.utils.spark_session import get_spark_session
 
-# 5 minutes in milliseconds
-WINDOW_MS = 5 * 60 * 1000
+
+def _infer_window_seconds(spark: SparkSession, silver_df) -> int:
+    """Infer aggregation window from Silver timestamp intervals (open_time in microseconds)."""
+    from pyspark.sql.functions import lag
+    from pyspark.sql.window import Window
+
+    w = Window.partitionBy("symbol").orderBy("open_time")
+    with_diff = silver_df.withColumn(
+        "interval_us", col("open_time") - lag("open_time", 1).over(w)
+    ).filter(col("interval_us").isNotNull() & (col("interval_us") > 0))
+
+    if with_diff.isEmpty():
+        return get_gold_window_seconds()  # fallback to config
+
+    stats = with_diff.approxQuantile("interval_us", [0.5], 0.01)
+    # Single column returns List[float], not List[List[float]]
+    median_us = float(stats[0]) if stats else 1_000_000
+
+    median_sec = median_us / 1_000_000
+    return max(1, int(round(median_sec)))  # follow source resolution
 
 
 def run(
@@ -64,10 +83,12 @@ def run(
     if not skip_validation:
         validate_silver(silver)
 
-    # 5-min window: floor(open_time / 300000) * 300000
+    # Auto-detect aggregation window from Silver timestamp intervals
+    window_sec = _infer_window_seconds(spark, silver)
+    window_us = window_sec * 1_000_000
     silver = silver.withColumn(
         "window_start",
-        (floor(col("open_time") / WINDOW_MS) * WINDOW_MS).cast(LongType()),
+        (floor(col("open_time") / window_us) * window_us).cast(LongType()),
     )
 
     # OHLCV aggregation
@@ -82,7 +103,7 @@ def run(
             spark_sum("num_trades").alias("num_trades"),
         )
         .withColumn("timestamp", col("window_start"))
-        .withColumn("date", to_date(to_timestamp(col("window_start") / 1000)))
+        .withColumn("date", to_date(to_timestamp(col("window_start") / 1_000_000)))
         .select(
             "symbol",
             "timestamp",

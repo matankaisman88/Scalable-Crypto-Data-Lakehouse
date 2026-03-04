@@ -22,14 +22,15 @@ from pyspark.sql.functions import (
 )
 from pyspark.sql.types import LongType
 
-WINDOW_MS = 5 * 60 * 1000  # 5 minutes
+# 5 minutes in microseconds (matches Binance Vision bulk CSV format)
+WINDOW_US = 5 * 60 * 1_000_000
 
 
 def _aggregate_ohlcv(df):
     """Same aggregation logic as gold_aggregations.py."""
     df = df.withColumn(
         "window_start",
-        (floor(col("open_time") / WINDOW_MS) * WINDOW_MS).cast(LongType()),
+        (floor(col("open_time") / WINDOW_US) * WINDOW_US).cast(LongType()),
     )
     return (
         df.groupBy("symbol", "window_start")
@@ -42,22 +43,22 @@ def _aggregate_ohlcv(df):
             spark_sum("num_trades").alias("num_trades"),
         )
         .withColumn("timestamp", col("window_start"))
-        .withColumn("date", to_date(to_timestamp(col("window_start") / 1000)))
+        .withColumn("date", to_date(to_timestamp(col("window_start") / 1_000_000)))
     )
 
 
 def test_gold_ohlcv_aggregation(spark_session):
     """Verify 5-min OHLCV: first(open), max(high), min(low), last(close), sum(volume)."""
-    # 10 rows at 1s intervals -> all in same 5-min window (0-300000 ms)
+    # 10 rows at 1s intervals (microseconds) -> all in same 5-min window
     data = [
         (
-            1000 * i,
+            1_000_000 * i,
             100.0 + i,
             101.0 + i,
             99.0 - i,
             100.5 + i,
             10.0,
-            1000 * i + 999,
+            1_000_000 * i + 999_999,
             1000.0,
             5,
             5.0,
