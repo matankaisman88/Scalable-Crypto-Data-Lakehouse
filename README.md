@@ -159,7 +159,7 @@ Open `http://localhost:18080` after job completion.
 
 ## Dashboard
 
-![Dashboard](assets/dashboard.png)
+![Dashboard](assets/dashboard.png?v=2)
 
 - **Start the dashboard** (after running at least one Gold job so the Gold table is populated):
 
