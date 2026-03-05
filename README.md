@@ -78,38 +78,47 @@ Gold holds **aggregated OHLCV** at the same resolution as Silver (1s→1s, 1m→
 | coin_name                     | Silver|
 | close_time                    | Silver|
 
-## Quick Start
+## Run Modes
+
+Two ways to ingest and process data:
+
+| Mode | Use case | How |
+|------|----------|-----|
+| **1. Manual Pipeline** | Scripts, CI/CD, custom dates | Fetch → Start Spark cluster → Run `run_pipeline.sh` |
+| **2. Dashboard** | Interactive UI, daily refresh, backfill | Start dashboard → Use **Refresh Yesterday** or **Advanced: Manual Backfill** |
+
+---
+
+## Mode 1: Manual Pipeline
+
+For running the pipeline via scripts (e.g. cron, CI, or one-off backfills).
 
 ### Prerequisites
 
 - Docker & Docker Compose
 - Python 3.10+ (for local dev)
 
-### 1. Fetch Data
+### Step 1: Fetch Data
 
 ```bash
 ./scripts/fetch_data.sh
 ```
 
-Optionally override defaults via environment variables, for example:
+Override defaults via environment variables:
 
 ```bash
 SYMBOL=BTCUSDT RESOLUTION=1m DATE_PATTERN=2024-01 ./scripts/fetch_data.sh
 ```
 
-**1s ingestion** (for 2026):
+**1s ingestion:** `RESOLUTION=1s DATE_PATTERN=2026 ./scripts/fetch_data.sh`
 
-1. Fetch 1s data: `RESOLUTION=1s DATE_PATTERN=2026 ./scripts/fetch_data.sh`
-2. Run pipeline: `./scripts/run_pipeline.sh` — Gold follows source resolution (1s→1s, 1m→1m)
-3. Dashboard presents detected resolution at `http://localhost:8501`
-
-### 2. Start Spark Cluster
+### Step 2: Start Spark Cluster
 
 ```bash
 docker compose -f docker/docker-compose.yml up -d spark-master spark-worker history-server
 ```
 
-### 3. Run Pipeline
+### Step 3: Run Pipeline
 
 #### Git Bash / WSL / Linux / macOS
 
@@ -138,9 +147,52 @@ Or run Bronze locally (without Docker) with:
 PYTHONPATH=. python -m src.jobs.bronze_ingestion [YYYY-MM-DD]
 ```
 
-### 4. View History Server
+### Step 4: History Server
 
 Open `http://localhost:18080` after job completion.
+
+---
+
+## Mode 2: Dashboard
+
+For interactive exploration, daily refresh, and manual backfill via the UI.
+
+### Start the Dashboard
+
+```bash
+docker compose -f docker/docker-compose.yml up -d dashboard
+```
+
+Access at `http://localhost:8501`. The dashboard runs fetch + Bronze → Silver → Gold **in-process** (no separate Spark cluster required for refresh).
+
+### Refresh Data (sidebar)
+
+1. **Refresh Yesterday's Data** — One-click pipeline for yesterday. Fast path for daily updates.
+2. **Advanced: Manual Backfill** — Date picker to run the pipeline for any past date (up to yesterday).
+
+Both run Fetch → Bronze → Silver → Gold. Cache is cleared on success. Pipeline logs in "View pipeline log" expander.
+
+### Dashboard UI (after at least one Gold job)
+
+![Dashboard](assets/dashboard.png?v=2)
+
+- **Metrics**: Symbol Price, Total Volume, 24h Price Change (formatted with $ and K/M/B suffixes).
+- **Candlestick chart**: OHLCV with volume bars; timeframe selector (1m, 1H, 4H, 1D, 1W); current price indicator.
+- **Filters**: symbol, date range, price range, min volume, table sort. **Download as CSV**.
+- **Memory-optimized**: Predicate pushdown; symbols from `coin_metadata.csv`; 30-day guardrail for 1s data.
+
+### AI Query (Natural Language to SQL)
+
+![AI Query](assets/ai-query.png)
+
+Ask questions in plain English; an LLM translates to Spark SQL and explains results.
+
+- **Requirements**: `OPENAI_API_KEY` in `.env`. Optional: `OPENAI_MODEL` (default `gpt-4o-mini`).
+- **Gold vs Silver**: Gold for OHLCV/volume/trades. Silver for `quote_asset_volume`, `taker_buy_base`, `taker_buy_quote`, `coin_name`, `close_time`.
+- **Safety**: Only `SELECT`; `LIMIT 100`; must filter by `symbol` and `date`.
+- **Timestamps**: `open_time` and `timestamp` are in **microseconds** — use `FROM_UNIXTIME(col/1000000)`.
+
+---
 
 ## Configuration
 
@@ -156,55 +208,6 @@ Open `http://localhost:18080` after job completion.
   - Increase `spark.executor.memory` in `config/config.yaml` (for example `2g`–`4g`, depending on host RAM), **and**
   - Ensure `SPARK_WORKER_MEMORY` / container memory limits are set higher than executor memory.
 - Alternatively, run Silver/Gold incrementally by passing an `ingestion_date` argument so they operate on the latest batch instead of the entire history, which reduces memory pressure.
-
-## Dashboard
-
-![Dashboard](assets/dashboard.png?v=2)
-
-- **Start the dashboard** (after running at least one Gold job so the Gold table is populated):
-
-```bash
-docker compose -f docker/docker-compose.yml up -d dashboard
-```
-
-- **Access the UI** at `http://localhost:8501` — **Crypto Analytics Dashboard** with dark sidebar and light main content.
-
-- **Metrics**: Symbol Price, Total Volume, 24h Price Change (formatted with $ and K/M/B suffixes).
-
-- **Candlestick chart**: OHLCV candlesticks with volume bars below; timeframe selector (1m, 1H, 4H, 1D, 1W) for on-the-fly aggregation; current price indicator on the chart.
-
-- **Filters**: symbol, date range (required before load), price range, min volume, and table sort order. **Download as CSV** to export filtered data.
-
-- **Theme**: `.streamlit/config.toml` defines dark sidebar and light main area; mounted into the dashboard container via Docker Compose.
-
-- **Memory-optimized loading** — Predicate pushdown on the Gold Delta table; symbols from `data/metadata/coin_metadata.csv`; data loaded only for selected symbol and date range (default: last 7 days). 30-day guardrail for 1s data.
-
-### Manual Data Refresh
-
-The sidebar provides two ways to refresh data:
-
-1. **Quick Refresh (default)** — A prominent **Refresh Yesterday's Data** button runs the full pipeline for yesterday. Fast path for daily updates.
-2. **Advanced: Manual Backfill** — An expander with a date picker to select any past date (up to yesterday) and run the pipeline for historical backfilling. Includes a warning that backfilling may take longer and consumes cluster resources.
-
-Both paths run the same pipeline:
-
-- **Fetch** — Downloads raw kline ZIPs from Binance public S3 (`s3://data.binance.vision`) via boto3 (no AWS credentials or Docker daemon required). Uses symbols from `coin_metadata.csv` and `RESOLUTION` env var (default `1m`).
-- **Bronze → Silver → Gold** — Runs all Medallion stages in-process (local Spark). No `spark-submit` or cluster connection needed.
-
-After a **successful** run, the cache is cleared so the Dashboard tab reflects the new data. Pipeline logs are available in a collapsible "View pipeline log" expander.
-
-### AI Query (Natural Language to SQL)
-
-![AI Query](assets/ai-query.png)
-
-The **Crypto Data AI Query** tab lets you ask questions in plain English; an LLM translates them into Spark SQL, executes against the Silver/Gold Delta tables, and explains the results.
-
-- **Chat interface**: User messages in dark grey bubbles; assistant responses with intro, collapsible **Generated SQL** (dark code block), results table, and natural-language summary with bolded key values.
-- **Requirements**: Add `OPENAI_API_KEY=sk-...` to `.env` at the project root. The dashboard mounts `.env` and loads it with `override=True`. Restart the dashboard after adding the key. Optional: `OPENAI_MODEL` (default: `gpt-4o-mini`).
-- **Gold vs Silver**: Gold for analytics (OHLCV, volume, trades). Silver when you need `quote_asset_volume`, `taker_buy_base`, `taker_buy_quote`, `coin_name`, or `close_time`. Both share the same resolution (1s, 1m, or 5m; default 1m).
-- **Example questions**: Expandable examples for Gold (price, volume, candles) and Silver (quote asset volume, taker buy, coin names).
-- **Safety**: Only `SELECT` queries; `DROP`, `DELETE`, `UPDATE`, etc. blocked. `LIMIT 100` enforced; must filter by `symbol` and `date`.
-- **Timestamp handling**: `open_time` (Silver) and `timestamp` (Gold) are in **microseconds** — use `FROM_UNIXTIME(col/1000000)` for human-readable output.
 
 ## Project Structure
 
