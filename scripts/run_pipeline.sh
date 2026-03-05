@@ -1,7 +1,8 @@
 #!/bin/bash
 # Run full Medallion pipeline: Bronze -> Silver -> Gold
-# Usage: ./scripts/run_pipeline.sh [ingestion_date] [--skip-optimize]
+# Usage: ./scripts/run_pipeline.sh [ingestion_date] [--skip-optimize] [--no-cleanup]
 #   --skip-optimize: skip Gold OPTIMIZE (faster backfills)
+#   --no-cleanup: keep raw files after pipeline (default: drop raw to free disk space)
 
 set -e
 
@@ -13,9 +14,12 @@ cd "$PROJECT_ROOT"
 # Parse args: first non-flag is ingestion_date; --skip-optimize passes through to Gold
 INGESTION_DATE=""
 GOLD_EXTRA=()
+CLEANUP_RAW=true
 for arg in "$@"; do
   if [[ "$arg" == "--skip-optimize" ]]; then
     GOLD_EXTRA+=("$arg")
+  elif [[ "$arg" == "--no-cleanup" ]]; then
+    CLEANUP_RAW=false
   elif [[ -z "$INGESTION_DATE" && "$arg" != -* ]]; then
     INGESTION_DATE="$arg"
   fi
@@ -34,6 +38,13 @@ echo "Starting Silver Transformation (incremental)..."
 
 echo "Starting Gold Aggregations (incremental)..."
 ./scripts/run_gold.sh "${INGESTION_DATE}" "${GOLD_EXTRA[@]}"
+
+if [[ "$CLEANUP_RAW" == "true" ]]; then
+  echo "Dropping raw files (data already in Bronze)..."
+  ./scripts/drop_raw.sh
+else
+  echo "Skipping raw cleanup (--no-cleanup)."
+fi
 
 echo "Medallion pipeline completed successfully."
 

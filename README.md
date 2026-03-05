@@ -127,9 +127,10 @@ docker compose -f docker/docker-compose.yml up -d spark-master spark-worker hist
 ./scripts/run_silver.sh [YYYY-MM-DD] # Silver only (optional ingestion_date)
 ./scripts/run_gold.sh   [YYYY-MM-DD] [--skip-optimize] # Gold only; --skip-optimize skips OPTIMIZE (faster backfills)
 
-./scripts/run_pipeline.sh            # Bronze -> Silver -> Gold (incremental by default)
+./scripts/run_pipeline.sh            # Bronze -> Silver -> Gold (drops raw after; incremental by default)
 ./scripts/run_pipeline.sh 2024-01-01  # Bronze, then Silver/Gold for a specific ingestion_date
 ./scripts/run_pipeline.sh 2025-01-01 --skip-optimize  # Backfill without OPTIMIZE (run optimize separately later)
+./scripts/run_pipeline.sh 2025-01-01 --no-cleanup  # Keep raw files after pipeline
 ```
 
 #### PowerShell
@@ -164,14 +165,14 @@ For interactive exploration, daily refresh, and manual backfill via the UI.
 docker compose -f docker/docker-compose.yml up -d dashboard
 ```
 
-Access at `http://localhost:8501`. The dashboard runs fetch + Bronze → Silver → Gold **in-process** (no separate Spark cluster required for refresh).
+Access at `http://localhost:8501`. The dashboard runs drop raw → fetch + Bronze → Silver → Gold **in-process** (no separate Spark cluster required for refresh).
 
 ### Refresh Data (sidebar)
 
 1. **Refresh Yesterday's Data** — One-click pipeline for yesterday. Fast path for daily updates.
 2. **Advanced: Manual Backfill** — Date picker to run the pipeline for any past date (up to yesterday).
 
-Both run Fetch → Bronze → Silver → Gold. Cache is cleared on success. Pipeline logs in "View pipeline log" expander.
+Both run **Drop old raw → Fetch → Bronze → Silver → Gold**. Old raw files are deleted first, then fresh data is fetched and processed. Cache is cleared on success. Pipeline logs in "View pipeline log" expander.
 
 ### Dashboard UI (after at least one Gold job)
 
@@ -222,7 +223,7 @@ Ask questions in plain English; an LLM translates to Spark SQL and explains resu
   /dashboard    Streamlit app (OHLCV chart, AI Query tab, Manual Refresh)
   /utils        schemas, spark_session, config_loader, ai_query_helper, pipeline_orchestrator
   /quality      quality_checks, GX suites
-/scripts        fetch_data.sh, cleanup_raw.sh, run_bronze.sh, run_pipeline.sh
+/scripts        fetch_data.sh, drop_raw.sh, cleanup_raw.sh, run_bronze.sh, run_pipeline.sh
 /tests          conftest, test_transformations
 /data           bronze, silver, gold, raw, spark-events
 ```

@@ -478,7 +478,7 @@ def _render_refresh_button() -> None:
         type="primary",
         key="refresh_yesterday",
         help=(
-            "Runs fetch (boto3) then Bronze → Silver → Gold for yesterday. "
+            "Drops old raw files, fetches yesterday's data, then Bronze → Silver → Gold. "
             "Fast path for daily updates."
         ),
         use_container_width=True,
