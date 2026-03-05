@@ -214,8 +214,9 @@ div[data-testid="stSidebar"] {
     background: #334155 !important;
     color: #f8fafc !important;
 }
-[data-testid="stSidebar"] .stExpander summary {
-    color: #000000 !important;
+[data-testid="stSidebar"] .stExpander summary,
+[data-testid="stSidebar"] .stExpander summary * {
+    color: #0f172a !important;
     font-weight: 600 !important;
 }
 
@@ -367,7 +368,7 @@ def _render_refresh_button() -> None:
             st.sidebar.error(f"Pipeline failed: {exc}")
 
         if log_lines:
-            with st.sidebar.expander("View pipeline log", expanded=False):
+            with st.sidebar.expander(":blue[View pipeline log]", expanded=False):
                 st.code("\n".join(log_lines), language=None)
 
     st.sidebar.divider()
