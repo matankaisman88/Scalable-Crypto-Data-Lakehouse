@@ -9,6 +9,7 @@ explanation — all in one round trip.
 import json
 import os
 import re
+from datetime import date, timedelta
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
@@ -105,6 +106,13 @@ symbol they want (e.g. "Please specify a symbol, e.g. BTCUSDT, ETHUSDT."). Same 
 if no date is given, ask for it. Only generate SQL when the user has provided both a symbol
 and a date.
 
+**Resolve relative dates:** When the user says "yesterday", "today", "last week", "last 7 days",
+etc., use the **Temporal Context** (injected below with the current date) to compute the
+concrete date(s). Always use YYYY-MM-DD in SQL — never relative terms. Examples:
+- "yesterday" → the date in Temporal Context
+- "today" → today's date
+- "last week" → date range for the past 7 days (use `date BETWEEN 'start' AND 'end'`)
+
 **Use conversation context:** When the user provides follow-up messages (e.g. "for BTCUSDT",
 "2026-03-03"), combine them with the **original question** from earlier in the conversation.
 For example: if the first message was "Which hour had the highest average close price on 2024-01-15?"
@@ -147,6 +155,26 @@ _QUERY_HARD_CAP = 100
 # ─────────────────────────────────────────────────────────────
 # Internal helpers
 # ─────────────────────────────────────────────────────────────
+
+
+def _build_temporal_context() -> str:
+    """Build the temporal context block with today's date for resolving relative terms."""
+    today = date.today()
+    yesterday = (today - timedelta(days=1)).strftime("%Y-%m-%d")
+    today_str = today.strftime("%Y-%m-%d")
+    week_ago = (today - timedelta(days=7)).strftime("%Y-%m-%d")
+    return f"""
+
+## Temporal Context (use this to resolve "yesterday", "today", etc.)
+
+**Current date:** {today_str}
+
+| User says    | Use in SQL (YYYY-MM-DD)     |
+|--------------|-----------------------------|
+| yesterday    | {yesterday}                 |
+| today        | {today_str}                 |
+| last 7 days  | date BETWEEN '{week_ago}' AND '{yesterday}' |
+"""
 
 
 def _enforce_limit(sql: str, cap: int = _QUERY_HARD_CAP) -> str:
@@ -250,7 +278,8 @@ class AIQueryHelper:
         sql = ""
         explanation = ""
 
-        messages = [{"role": "system", "content": _SYSTEM_PROMPT}]
+        system_content = _SYSTEM_PROMPT + _build_temporal_context()
+        messages = [{"role": "system", "content": system_content}]
         if conversation_history:
             for msg in conversation_history:
                 role = msg.get("role")

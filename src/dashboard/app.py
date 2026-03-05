@@ -883,7 +883,7 @@ def _render_ai_chat_tab() -> None:
 
     # ── Input box ────────────────────────────────────────────────────────
     user_input = st.chat_input(
-        "Ask anything about the crypto data…  (e.g. 'Show BTCUSDT closes on 2024-01-15')"
+        "Ask anything about the crypto data…  (e.g. 'What was the highest price for BTCUSDT yesterday?')"
     )
 
     if not user_input:
