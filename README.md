@@ -146,6 +146,7 @@ Open `http://localhost:18080` after job completion.
 
 - **config/config.yaml** — Paths, Spark settings, GX checkpoint
 - **.env** — Overrides (copy from `.env.example`)
+- **.streamlit/config.toml** — Dashboard theme (dark sidebar, light main, dark code blocks)
 
 ### Spark Tuning (AQE & Memory)
 
@@ -166,11 +167,17 @@ Open `http://localhost:18080` after job completion.
 docker compose -f docker/docker-compose.yml up -d dashboard
 ```
 
-- **Access the UI** at `http://localhost:8501` to explore OHLCV candlesticks from the Gold Delta table. The dashboard infers resolution (1s, 1m, 5m) from the data and displays it in the title. Features a light, modern design with high-contrast colors.
+- **Access the UI** at `http://localhost:8501` — **Crypto Analytics Dashboard** with dark sidebar and light main content.
 
-- **Memory-optimized loading** — Uses predicate pushdown on the Gold Delta table: symbols come from `data/metadata/coin_metadata.csv` (no full-table scan), and data is loaded only for the selected symbol and date range. Date range is chosen *before* load (default: last 7 days). A 30-day guardrail prevents OOM when loading 1s data on 4GB executors.
+- **Metrics**: Symbol Price, Total Volume, 24h Price Change (formatted with $ and K/M/B suffixes).
 
-- **Filters**: symbol, date range (required before load), price range, min volume, and table sort order. Includes basic metrics, candlestick chart, and **Download as CSV** to export filtered data.
+- **Candlestick chart**: OHLCV candlesticks with volume bars below; timeframe selector (1m, 1H, 4H, 1D, 1W) for on-the-fly aggregation; current price indicator on the chart.
+
+- **Filters**: symbol, date range (required before load), price range, min volume, and table sort order. **Download as CSV** to export filtered data.
+
+- **Theme**: `.streamlit/config.toml` defines dark sidebar and light main area; mounted into the dashboard container via Docker Compose.
+
+- **Memory-optimized loading** — Predicate pushdown on the Gold Delta table; symbols from `data/metadata/coin_metadata.csv`; data loaded only for selected symbol and date range (default: last 7 days). 30-day guardrail for 1s data.
 
 ### Manual Data Refresh
 
@@ -185,18 +192,20 @@ After success, the cache is cleared so the Dashboard tab reflects the new data.
 
 ![AI Query](assets/ai-query.png)
 
-The **AI Query** tab lets you ask questions in plain English; an LLM translates them into Spark SQL, executes against the Silver/Gold Delta tables, and explains the results.
+The **Crypto Data AI Query** tab lets you ask questions in plain English; an LLM translates them into Spark SQL, executes against the Silver/Gold Delta tables, and explains the results.
 
-- **Requirements**: Add `OPENAI_API_KEY=sk-...` to `.env` at the project root. The dashboard mounts `.env` and loads it with `override=True` so the key is available in the container. Restart the dashboard after adding the key. Optional: `OPENAI_MODEL` (default: `gpt-4o-mini`).
-- **Gold vs Silver**: Gold is the default for analytics (OHLCV, volume, trades). Use Silver only when you need extra columns: `quote_asset_volume`, `taker_buy_base`, `taker_buy_quote`, `coin_name`, or `close_time`. Both tables share the same resolution (1s, 1m, or 5m depending on fetch; default is 1m).
-- **Example questions**: The tab includes expandable examples for Gold (price, volume, candles) and Silver (quote asset volume, taker buy, coin names).
-- **Safety**: Only `SELECT` queries are allowed; `DROP`, `DELETE`, `UPDATE`, etc. are blocked. All queries are capped at `LIMIT 100` and must filter by `symbol` and `date` for partition pruning.
-- **Timestamp handling**: `open_time` (Silver) and `timestamp` (Gold) are stored in **microseconds** — SQL must use `FROM_UNIXTIME(col/1000000)` for human-readable output.
+- **Chat interface**: User messages in dark grey bubbles; assistant responses with intro, collapsible **Generated SQL** (dark code block), results table, and natural-language summary with bolded key values.
+- **Requirements**: Add `OPENAI_API_KEY=sk-...` to `.env` at the project root. The dashboard mounts `.env` and loads it with `override=True`. Restart the dashboard after adding the key. Optional: `OPENAI_MODEL` (default: `gpt-4o-mini`).
+- **Gold vs Silver**: Gold for analytics (OHLCV, volume, trades). Silver when you need `quote_asset_volume`, `taker_buy_base`, `taker_buy_quote`, `coin_name`, or `close_time`. Both share the same resolution (1s, 1m, or 5m; default 1m).
+- **Example questions**: Expandable examples for Gold (price, volume, candles) and Silver (quote asset volume, taker buy, coin names).
+- **Safety**: Only `SELECT` queries; `DROP`, `DELETE`, `UPDATE`, etc. blocked. `LIMIT 100` enforced; must filter by `symbol` and `date`.
+- **Timestamp handling**: `open_time` (Silver) and `timestamp` (Gold) are in **microseconds** — use `FROM_UNIXTIME(col/1000000)` for human-readable output.
 
 ## Project Structure
 
 ```
 /config          config.yaml
+/.streamlit      config.toml (dashboard theme)
 /docker          Dockerfile, docker-compose.yml
 /src
   /jobs         bronze_ingestion, silver_transformation, gold_aggregations

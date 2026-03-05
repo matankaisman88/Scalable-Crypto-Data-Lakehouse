@@ -111,7 +111,7 @@ Only pure SELECT queries are allowed.
 Reply with ONLY a valid JSON object — no markdown fences, no extra keys:
 {{
   "sql":         "<complete Spark SQL SELECT query>",
-  "explanation": "<1–2 sentences: what the query does and what its results reveal>"
+  "explanation": "<1–2 sentences: what the query does and what its results reveal. Bold key values (e.g. **43,127.80 USDT**) for emphasis.>"
 }}"""
 
 # Patterns that must never appear in generated SQL

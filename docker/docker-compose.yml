@@ -96,6 +96,7 @@ services:
       - ../data/spark-events:/opt/spark-events
       - ../src:/opt/spark-app/src
       - ../config:/opt/spark-app/config
+      - ../.streamlit:/opt/spark-app/.streamlit
       # Mount scripts so the Manual Refresh button can invoke them
       - ../scripts:/opt/spark-app/scripts
       # Mount .env so load_dotenv() can load OPENAI_API_KEY (env_file path can fail on Windows)

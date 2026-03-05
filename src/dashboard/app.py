@@ -1,3 +1,4 @@
+import html
 from datetime import date, timedelta
 from pathlib import Path
 from typing import List
@@ -37,6 +38,39 @@ def _infer_window_seconds(df: pd.DataFrame) -> int:
     if pd.isna(median_sec) or median_sec <= 0:
         return 300
     return max(1, int(round(median_sec)))
+
+
+def _format_volume(val: float) -> str:
+    """Format volume with K/M/B suffix (base asset volume)."""
+    if val >= 1e12:
+        return f"{val / 1e12:.2f}T"
+    if val >= 1e9:
+        return f"{val / 1e9:.2f}B"
+    if val >= 1e6:
+        return f"{val / 1e6:.2f}M"
+    if val >= 1e3:
+        return f"{val / 1e3:.2f}K"
+    return f"{val:,.0f}"
+
+
+def _format_price(val: float) -> str:
+    """Format price with $ and commas."""
+    if val >= 1000:
+        return f"${val:,.2f}"
+    if val >= 1:
+        return f"${val:.2f}"
+    return f"${val:.4f}"
+
+
+def _resample_ohlcv(df: pd.DataFrame, rule: str) -> pd.DataFrame:
+    """Resample OHLCV data to a coarser timeframe."""
+    if df.empty or "timestamp" not in df.columns:
+        return df
+    idx = df.set_index("timestamp").sort_index()
+    resampled = idx.resample(rule).agg(
+        {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}
+    ).dropna()
+    return resampled.reset_index()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -121,11 +155,12 @@ def _get_ai_helper():
 
 _CSS = """
 <style>
-/* Minimize Streamlit header (Deploy, menu, etc.) */
+/* Minimize Streamlit header */
 header[data-testid="stHeader"] { display: none; }
 #MainMenu { visibility: hidden; }
 footer { visibility: hidden; }
 
+/* Main content: light theme */
 .main, .block-container {
     background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
     padding-top: 1.5rem;
@@ -133,57 +168,144 @@ footer { visibility: hidden; }
 h1 {
     color: #0f172a !important;
     font-weight: 700 !important;
+    font-size: 1.75rem !important;
     letter-spacing: -0.02em;
-}
-.stMetric {
-    background: white;
-    padding: 1rem 1.25rem;
-    border-radius: 12px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-    border: 1px solid #e2e8f0;
-}
-.stMetric label {
-    color: #64748b !important;
-    font-weight: 500 !important;
-}
-.stMetric [data-testid="stMetricValue"] {
-    color: #0f172a !important;
-    font-weight: 600 !important;
-}
-div[data-testid="stSidebar"] {
-    background: white;
-    border-right: 1px solid #e2e8f0;
-}
-div[data-testid="stSidebar"] .stMarkdown {
-    color: #334155;
-}
-.stDataFrame {
-    border-radius: 12px;
-    overflow: hidden;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-}
-.stDownloadButton button {
-    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%) !important;
-    color: white !important;
-    border-radius: 8px !important;
-    font-weight: 500 !important;
-}
-p, .stCaption, [data-testid="stCaption"], small {
-    color: #1e293b !important;
 }
 h2, h3 {
     color: #0f172a !important;
     font-weight: 600 !important;
 }
-/* Chat message styling */
-[data-testid="stChatMessage"] {
-    background: white;
-    border-radius: 12px;
-    border: 1px solid #e2e8f0;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
-    margin-bottom: 0.5rem;
+
+/* Dark sidebar (matches mockup) - config.toml + CSS fallback */
+[data-testid="stSidebar"],
+section[data-testid="stSidebar"],
+div[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%) !important;
+    border-right: 1px solid #334155 !important;
 }
-/* Tab labels: larger, bolder, clearer */
+[data-testid="stSidebar"] .stMarkdown,
+[data-testid="stSidebar"] p,
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3 {
+    color: #e2e8f0 !important;
+}
+[data-testid="stSidebar"] .stCaption,
+[data-testid="stSidebar"] [data-testid="stCaption"] {
+    color: #94a3b8 !important;
+}
+[data-testid="stSidebar"] label {
+    color: #e2e8f0 !important;
+}
+[data-testid="stSidebar"] button[kind="primary"],
+[data-testid="stSidebar"] .stButton > button {
+    background: #334155 !important;
+    color: #f8fafc !important;
+    border-radius: 8px !important;
+    font-weight: 500 !important;
+    border: 1px solid #475569 !important;
+}
+[data-testid="stSidebar"] button:hover {
+    background: #475569 !important;
+}
+[data-testid="stSidebar"] [data-baseweb="select"] {
+    background: #334155 !important;
+    color: #f8fafc !important;
+}
+
+/* Metric cards: prominent, rounded */
+.stMetric {
+    background: white !important;
+    padding: 1.25rem 1.5rem !important;
+    border-radius: 12px !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06) !important;
+    border: 1px solid #e2e8f0 !important;
+}
+.stMetric label {
+    color: #64748b !important;
+    font-weight: 600 !important;
+    font-size: 0.9rem !important;
+}
+.stMetric [data-testid="stMetricValue"] {
+    color: #0f172a !important;
+    font-weight: 700 !important;
+    font-size: 1.35rem !important;
+}
+
+.stDataFrame {
+    border-radius: 12px !important;
+    overflow: hidden !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06) !important;
+}
+.stDownloadButton button {
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%) !important;
+    color: white !important;
+    border-radius: 8px !important;
+    font-weight: 600 !important;
+}
+p, .stCaption, [data-testid="stCaption"], small {
+    color: #1e293b !important;
+}
+
+/* AI Query: chat bubbles */
+[data-testid="stChatMessage"] {
+    border-radius: 12px !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06) !important;
+    margin-bottom: 1rem !important;
+    padding: 1rem !important;
+}
+[data-testid="stChatMessage"] p {
+    font-size: 1rem !important;
+    line-height: 1.5 !important;
+}
+/* User message: dark grey bubble (Streamlit places user avatar on right) */
+[data-testid="stChatMessage"] .user-msg-bubble {
+    background: #334155 !important;
+    color: #f8fafc !important;
+    padding: 0.75rem 1rem !important;
+    border-radius: 12px !important;
+    display: inline-block !important;
+    max-width: 85% !important;
+}
+
+/* AI Query: SQL expander - card style */
+.stExpander {
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 10px !important;
+    background: white !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06) !important;
+    margin: 0.75rem 0 !important;
+}
+.stExpander summary {
+    font-weight: 600 !important;
+    color: #0f172a !important;
+    padding: 0.5rem 0 !important;
+}
+/* Dark code block (backup for config) */
+.stCodeBlock pre, .stCodeBlock code {
+    background: #1e293b !important;
+    color: #e2e8f0 !important;
+    border-radius: 8px !important;
+}
+
+/* AI Query: chat input bar */
+[data-testid="stChatInput"] {
+    border-radius: 12px !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06) !important;
+}
+[data-testid="stChatInput"] textarea {
+    border-radius: 12px !important;
+}
+
+/* AI Query: results table */
+[data-testid="stDataFrame"] thead tr th {
+    background: #f1f5f9 !important;
+    color: #0f172a !important;
+    font-weight: 600 !important;
+    border-bottom: 2px solid #e2e8f0 !important;
+}
+
+/* Tab labels */
 [data-testid="stTabs"] button {
     font-size: 1.15rem !important;
     font-weight: 600 !important;
@@ -204,7 +326,7 @@ def _render_refresh_button() -> None:
     """Render the 'Refresh Daily Data' button and its execution logic."""
     from src.utils.pipeline_orchestrator import run_refresh, yesterday
 
-    st.sidebar.header("Data Management")
+    st.sidebar.header("DATA MANAGEMENT")
     st.sidebar.caption(
         "Trigger the full ingestion pipeline for yesterday's data. "
         "This runs fetch → Bronze → Silver → Gold."
@@ -246,7 +368,7 @@ def _render_refresh_button() -> None:
 
 def _render_sidebar_filters(symbols: List[str]) -> tuple:
     """Render symbol / date / price / volume filters. Returns (symbol, start, end)."""
-    st.sidebar.header("Filters")
+    st.sidebar.header("FILTERS")
     st.sidebar.caption("Refine the data displayed in the chart and table.")
 
     symbol = st.sidebar.selectbox("Symbol", symbols, index=0)
@@ -314,10 +436,7 @@ def _render_dashboard_tab(symbol: str, start_date: date, end_date: date) -> None
         )
         return
 
-    window_sec = _infer_window_seconds(df)
-    window_label = _format_window_label(window_sec)
-    st.title(f"Gold Layer — {window_label} OHLCV")
-    st.caption(f"Interactive visualisation of the Gold Delta table ({window_label} OHLCV).")
+    st.title("Crypto Analytics Dashboard")
 
     required_cols = {"symbol", "timestamp", "open", "high", "low", "close", "volume"}
     missing_cols = required_cols.difference(df.columns)
@@ -327,6 +446,17 @@ def _render_dashboard_tab(symbol: str, start_date: date, end_date: date) -> None
         return
 
     filtered = df
+
+    # ── Timeframe (chart aggregation) ────────────────────────────────────
+    st.sidebar.subheader("Timeframe")
+    timeframe = st.sidebar.radio(
+        "Chart aggregation",
+        ["1m", "1H", "4H", "1D", "1W"],
+        horizontal=True,
+        format_func=lambda x: x,
+    )
+    resample_rules = {"1m": None, "1H": "1h", "4H": "4h", "1D": "1D", "1W": "1W"}
+    resample_rule = resample_rules[timeframe]
 
     # ── Price & volume filters ────────────────────────────────────────────
     st.sidebar.subheader("Price & Volume")
@@ -363,7 +493,12 @@ def _render_dashboard_tab(symbol: str, start_date: date, end_date: date) -> None
 
     MAX_CHART_ROWS = 5000
     MAX_TABLE_ROWS = 1000
-    chart_df = filtered.iloc[-MAX_CHART_ROWS:] if len(filtered) > MAX_CHART_ROWS else filtered
+    chart_df = filtered.iloc[-MAX_CHART_ROWS:] if len(filtered) > MAX_CHART_ROWS else filtered.copy()
+    if resample_rule:
+        chart_df = _resample_ohlcv(chart_df, resample_rule)
+    if chart_df.empty:
+        st.warning("No chart data after resampling. Try a different timeframe or date range.")
+        return
     table_df = filtered.tail(MAX_TABLE_ROWS)
     if sort_order == "Newest first":
         table_df = table_df.iloc[::-1]
@@ -371,57 +506,110 @@ def _render_dashboard_tab(symbol: str, start_date: date, end_date: date) -> None
     latest = filtered.iloc[-1]
     first = filtered.iloc[0]
     total_volume = float(filtered["volume"].sum())
+    close_price = float(latest["close"])
     price_change = float(latest["close"] - first["close"])
     pct_change = (price_change / float(first["close"])) * 100 if first["close"] else 0.0
 
     col1, col2, col3 = st.columns(3)
-    col1.metric("Symbol", symbol)
-    col2.metric("Total Volume", f"{total_volume:,.0f}")
-    col3.metric(
-        "Price Change",
-        f"{latest['close']:.4f}",
-        f"{price_change:+.4f} ({pct_change:+.2f}%)",
-    )
+    col1.metric("Symbol Price", _format_price(close_price))
+    col2.metric("Total Volume", _format_volume(total_volume))
+    change_val = f"+{_format_price(price_change)}" if price_change >= 0 else _format_price(price_change)
+    col3.metric("24h Price Change", change_val, delta=f"{pct_change:+.2f}%")
 
     import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
 
-    fig = go.Figure(
-        data=[
-            go.Candlestick(
-                x=chart_df["timestamp"],
-                open=chart_df["open"],
-                high=chart_df["high"],
-                low=chart_df["low"],
-                close=chart_df["close"],
-                increasing_line_color="#059669",
-                decreasing_line_color="#dc2626",
-                name="Price",
-            )
-        ]
+    # Candlestick + volume bars (mockup style)
+    fig = make_subplots(
+        rows=2,
+        cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.03,
+        row_heights=[0.7, 0.3],
+    )
+    fig.add_trace(
+        go.Candlestick(
+            x=chart_df["timestamp"],
+            open=chart_df["open"],
+            high=chart_df["high"],
+            low=chart_df["low"],
+            close=chart_df["close"],
+            increasing_line_color="#059669",
+            decreasing_line_color="#dc2626",
+            name="Price",
+        ),
+        row=1,
+        col=1,
+    )
+    fig.add_trace(
+        go.Bar(
+            x=chart_df["timestamp"],
+            y=chart_df["volume"],
+            marker_color="#3b82f6",
+            name="Volume",
+            showlegend=False,
+        ),
+        row=2,
+        col=1,
     )
     fig.update_layout(
         template="plotly_white",
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(255,255,255,0.95)",
-        margin=dict(l=0, r=0, t=40, b=0),
-        xaxis_title="Time",
-        yaxis_title="Price",
-        height=600,
+        margin=dict(l=50, r=80, t=80, b=40),
+        height=550,
         font=dict(color="#0f172a", size=12),
-        title_font=dict(color="#0f172a", size=14),
-        xaxis=dict(
-            gridcolor="#cbd5e1",
-            tickfont=dict(color="#0f172a", size=11),
-            title_font=dict(color="#0f172a", size=12),
+        title=dict(
+            text=f"{symbol} | OHLCV Candlestick Chart ({timeframe})",
+            font=dict(size=18, color="#0f172a"),
+            x=0.5,
+            xanchor="center",
         ),
-        yaxis=dict(
-            gridcolor="#cbd5e1",
-            tickfont=dict(color="#0f172a", size=11),
-            title_font=dict(color="#0f172a", size=12),
-        ),
+        xaxis_rangeslider_visible=False,
+        xaxis2_title="Time",
+        showlegend=False,
+        annotations=[
+            dict(
+                x=chart_df["timestamp"].iloc[-1],
+                y=close_price,
+                xref="x",
+                yref="y",
+                xanchor="left",
+                text=f" {_format_price(close_price)} →",
+                showarrow=False,
+                font=dict(size=12, color="#0f172a"),
+                bgcolor="rgba(255,255,255,0.9)",
+                borderpad=4,
+            )
+        ],
+    )
+    fig.update_xaxes(
+        gridcolor="#cbd5e1",
+        tickfont=dict(color="#0f172a", size=11),
+        row=1,
+        col=1,
+    )
+    fig.update_xaxes(
+        gridcolor="#cbd5e1",
+        tickfont=dict(color="#0f172a", size=11),
+        row=2,
+        col=1,
+    )
+    fig.update_yaxes(
+        title_text="Price",
+        gridcolor="#cbd5e1",
+        tickfont=dict(color="#0f172a", size=11),
+        row=1,
+        col=1,
+    )
+    fig.update_yaxes(
+        title_text="Volume",
+        gridcolor="#cbd5e1",
+        tickfont=dict(color="#0f172a", size=11),
+        row=2,
+        col=1,
     )
 
-    st.subheader("Candlestick Chart")
     if len(filtered) > MAX_CHART_ROWS:
         st.caption(f"Showing last {MAX_CHART_ROWS:,} of {len(filtered):,} rows.")
     st.plotly_chart(fig, use_container_width=True)
@@ -459,10 +647,12 @@ def _render_dashboard_tab(symbol: str, start_date: date, end_date: date) -> None
 
 def _render_ai_chat_tab() -> None:
     """Render the NL-to-SQL chat interface."""
-    st.title("AI Query")
-    st.caption(
+    st.markdown(
+        '<h1 style="text-align: center; font-size: 2rem; font-weight: 700; color: #0f172a; margin-bottom: 0.25rem;">Crypto Data AI Query</h1>'
+        '<p style="text-align: center; color: #64748b; font-size: 0.95rem; margin-bottom: 1.5rem;">'
         "Ask questions about the Silver or Gold Delta tables in plain English. "
-        "The assistant translates your question into Spark SQL, runs it, and explains the results."
+        "The assistant translates your question into Spark SQL, runs it, and explains the results.</p>",
+        unsafe_allow_html=True,
     )
 
     # ── API key check ─────────────────────────────────────────────────────
@@ -499,13 +689,16 @@ def _render_ai_chat_tab() -> None:
     for msg in st.session_state.ai_chat_messages:
         with st.chat_message(msg["role"]):
             if msg["role"] == "user":
-                st.markdown(msg["content"])
+                escaped = html.escape(msg["content"])
+                st.markdown(f'<span class="user-msg-bubble">{escaped}</span>', unsafe_allow_html=True)
             else:
                 # Assistant messages carry extra structured data
                 if msg.get("error"):
                     st.error(msg["error"])
                 else:
-                    st.markdown(msg.get("explanation", ""))
+                    intro = "Of course! I've generated the SQL query and retrieved the results for you:" if msg.get("sql") and msg.get("dataframe") is not None and not msg["dataframe"].empty else ""
+                    if intro:
+                        st.markdown(intro)
 
                 if msg.get("sql"):
                     with st.expander("Generated SQL", expanded=False):
@@ -514,6 +707,9 @@ def _render_ai_chat_tab() -> None:
                 if msg.get("dataframe") is not None and not msg["dataframe"].empty:
                     st.dataframe(msg["dataframe"], use_container_width=True)
                     st.caption(f"{len(msg['dataframe']):,} row(s) returned.")
+
+                if not msg.get("error") and msg.get("explanation"):
+                    st.markdown(msg["explanation"])
 
     # ── Clear history button ──────────────────────────────────────────────
     if st.session_state.ai_chat_messages:
@@ -532,7 +728,8 @@ def _render_ai_chat_tab() -> None:
     # Store and display user message immediately
     st.session_state.ai_chat_messages.append({"role": "user", "content": user_input})
     with st.chat_message("user"):
-        st.markdown(user_input)
+        escaped = html.escape(user_input)
+        st.markdown(f'<span class="user-msg-bubble">{escaped}</span>', unsafe_allow_html=True)
 
     # ── Call the AI helper ────────────────────────────────────────────────
     with st.chat_message("assistant"):
@@ -552,7 +749,9 @@ def _render_ai_chat_tab() -> None:
         if result["error"]:
             st.error(result["error"])
         else:
-            st.markdown(result.get("explanation", ""))
+            intro = "Of course! I've generated the SQL query and retrieved the results for you:" if result.get("sql") and result.get("dataframe") is not None and not result["dataframe"].empty else ""
+            if intro:
+                st.markdown(intro)
 
         if result.get("sql"):
             with st.expander("Generated SQL", expanded=True):
@@ -562,6 +761,9 @@ def _render_ai_chat_tab() -> None:
         if df is not None and not df.empty:
             st.dataframe(df, use_container_width=True)
             st.caption(f"{len(df):,} row(s) returned.")
+
+        if not result.get("error") and result.get("explanation"):
+            st.markdown(result["explanation"])
 
     # Persist assistant turn to session state
     st.session_state.ai_chat_messages.append(
@@ -582,7 +784,7 @@ def _render_ai_chat_tab() -> None:
 
 def main() -> None:
     st.set_page_config(
-        page_title="Crypto OHLCV Dashboard",
+        page_title="Crypto Analytics Dashboard",
         layout="wide",
         initial_sidebar_state="expanded",
     )
