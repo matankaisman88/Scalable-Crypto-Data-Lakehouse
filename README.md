@@ -125,10 +125,11 @@ docker compose -f docker/docker-compose.yml up -d spark-master spark-worker hist
 ```bash
 ./scripts/run_bronze.sh [YYYY-MM-DD] # Bronze only (optional ingestion_date; defaults to today)
 ./scripts/run_silver.sh [YYYY-MM-DD] # Silver only (optional ingestion_date)
-./scripts/run_gold.sh   [YYYY-MM-DD] # Gold only (optional ingestion_date)
+./scripts/run_gold.sh   [YYYY-MM-DD] [--skip-optimize] # Gold only; --skip-optimize skips OPTIMIZE (faster backfills)
 
 ./scripts/run_pipeline.sh            # Bronze -> Silver -> Gold (incremental by default)
-./scripts/run_pipeline.sh 2024-01-01 # Bronze, then Silver/Gold for a specific ingestion_date
+./scripts/run_pipeline.sh 2024-01-01  # Bronze, then Silver/Gold for a specific ingestion_date
+./scripts/run_pipeline.sh 2025-01-01 --skip-optimize  # Backfill without OPTIMIZE (run optimize separately later)
 ```
 
 #### PowerShell

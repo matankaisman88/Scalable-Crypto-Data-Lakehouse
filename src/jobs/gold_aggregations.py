@@ -59,6 +59,7 @@ def run(
     spark: Optional[SparkSession] = None,
     ingestion_date: Optional[str] = None,
     skip_validation: bool = False,
+    skip_optimize: bool = False,
 ) -> None:
     paths = get_paths()
     silver_path = paths["silver"]
@@ -130,18 +131,27 @@ def run(
         )
 
     # OPTIMIZE only newly merged partitions (preserves Z-ORDER on rest of table)
-    if DeltaTable.isDeltaTable(spark, gold_path):
+    # Batched: single OPTIMIZE over all affected dates (faster than per-date loop)
+    if DeltaTable.isDeltaTable(spark, gold_path) and not skip_optimize:
         dates = [row.date for row in gold_batch.select("date").distinct().collect()]
-        for d in dates:
-            d_str = str(d) if d else ""
-            if d_str:
-                DeltaTable.forPath(spark, gold_path).optimize().where(
-                    f"date = '{d_str}'"
-                ).executeZOrderBy(["timestamp"])
+        date_strs = [str(d) for d in dates if d]
+        if date_strs:
+            date_list = "', '".join(date_strs)
+            DeltaTable.forPath(spark, gold_path).optimize().where(
+                f"date IN ('{date_list}')"
+            ).executeZOrderBy(["timestamp"])
 
 
 if __name__ == "__main__":
     import sys
 
-    ingestion_date = sys.argv[1] if len(sys.argv) > 1 else None
-    run(ingestion_date=ingestion_date)
+    args = sys.argv[1:] if len(sys.argv) > 1 else []
+    ingestion_date = None
+    skip_optimize = False
+    for arg in args:
+        if arg in ("--skip-optimize", "-s"):
+            skip_optimize = True
+        elif not arg.startswith("-"):
+            ingestion_date = arg
+
+    run(ingestion_date=ingestion_date, skip_optimize=skip_optimize)
