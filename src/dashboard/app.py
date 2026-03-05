@@ -219,6 +219,12 @@ div[data-testid="stSidebar"] {
     color: #0f172a !important;
     font-weight: 600 !important;
 }
+[data-testid="stSidebar"] .stExpander .stCaption,
+[data-testid="stSidebar"] .stExpander p,
+[data-testid="stSidebar"] .stExpander label,
+[data-testid="stSidebar"] .stExpander input {
+    color: #0f172a !important;
+}
 
 /* Metric cards: prominent, rounded */
 .stMetric {
@@ -329,47 +335,72 @@ p, .stCaption, [data-testid="stCaption"], small {
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+def _run_refresh_flow(target_date: str) -> None:
+    """Execute pipeline refresh for target_date; stream logs, clear cache on success."""
+    from src.utils.pipeline_orchestrator import run_refresh
+
+    log_lines: List[str] = []
+    status_placeholder = st.sidebar.empty()
+
+    try:
+        with st.spinner(f"Running pipeline for {target_date} …"):
+            for line in run_refresh(target_date):
+                log_lines.append(line)
+                status_placeholder.caption(line or "…")
+
+        status_placeholder.empty()
+        st.sidebar.success(f"Pipeline finished for {target_date}.")
+        st.cache_data.clear()
+        st.sidebar.caption("Cache cleared — reload the Dashboard tab to see new data.")
+
+    except RuntimeError as exc:
+        status_placeholder.empty()
+        st.sidebar.error(f"Pipeline failed: {exc}")
+
+    if log_lines:
+        with st.sidebar.expander(":blue[View pipeline log]", expanded=False):
+            st.code("\n".join(log_lines), language=None)
+
+
 def _render_refresh_button() -> None:
-    """Render the 'Refresh Daily Data' button and its execution logic."""
-    from src.utils.pipeline_orchestrator import run_refresh, yesterday
+    """Render Quick Refresh (yesterday) and Advanced Backfill UI."""
+    from src.utils.pipeline_orchestrator import yesterday
 
     st.sidebar.header("DATA MANAGEMENT")
     st.sidebar.caption(
-        "Trigger the full ingestion pipeline for yesterday's data. "
-        "This runs fetch → Bronze → Silver → Gold."
+        "Trigger the full ingestion pipeline. "
+        "Runs fetch → Bronze → Silver → Gold."
     )
 
-    target = yesterday()
+    # ── Quick Refresh: Yesterday (default happy path) ────────────────────────
+    target_yesterday = yesterday()
     if st.sidebar.button(
-        f"Refresh Daily Data ({target})",
+        f"Refresh Yesterday's Data ({target_yesterday})",
         type="primary",
+        key="refresh_yesterday",
         help=(
-            "Runs fetch_data.sh (best-effort) then run_pipeline.sh for yesterday. "
-            "Requires Docker daemon access for the fetch step."
+            "Runs fetch (boto3) then Bronze → Silver → Gold for yesterday. "
+            "Fast path for daily updates."
         ),
         use_container_width=True,
     ):
-        log_lines: List[str] = []
-        status_placeholder = st.sidebar.empty()
+        _run_refresh_flow(target_yesterday)
 
-        try:
-            with st.spinner(f"Running pipeline for {target} …"):
-                for line in run_refresh(target):
-                    log_lines.append(line)
-                    status_placeholder.caption(line or "…")
-
-            status_placeholder.empty()
-            st.sidebar.success(f"Pipeline finished for {target}.")
-            st.cache_data.clear()
-            st.sidebar.caption("Cache cleared — reload the Dashboard tab to see new data.")
-
-        except RuntimeError as exc:
-            status_placeholder.empty()
-            st.sidebar.error(f"Pipeline failed: {exc}")
-
-        if log_lines:
-            with st.sidebar.expander(":blue[View pipeline log]", expanded=False):
-                st.code("\n".join(log_lines), language=None)
+    # ── Advanced: Manual Backfill ─────────────────────────────────────────
+    with st.sidebar.expander("Advanced: Manual Backfill", expanded=False):
+        st.caption(
+            "Backfilling historical data may take longer and consumes cluster resources."
+        )
+        backfill_date = st.date_input(
+            "Select Target Date",
+            value=date.today() - timedelta(days=1),
+            min_value=date(2020, 1, 1),
+            max_value=date.today() - timedelta(days=1),
+            key="backfill_date",
+        )
+        if st.sidebar.button("Run Backfill", key="run_backfill", use_container_width=True):
+            target_str = backfill_date.strftime("%Y-%m-%d")
+            _run_refresh_flow(target_str)
 
     st.sidebar.divider()
 

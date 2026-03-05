@@ -181,12 +181,17 @@ docker compose -f docker/docker-compose.yml up -d dashboard
 
 ### Manual Data Refresh
 
-The sidebar includes a **Refresh Daily Data** button that runs the full pipeline for yesterday's date:
+The sidebar provides two ways to refresh data:
 
-1. **Fetch** — Downloads raw kline ZIPs from Binance public S3 (`s3://data.binance.vision`) via boto3 (no AWS credentials or Docker daemon required). Uses symbols from `coin_metadata.csv` and `RESOLUTION` env var (default `1m`).
-2. **Bronze → Silver → Gold** — Runs all Medallion stages in-process (local Spark). No `spark-submit` or cluster connection needed.
+1. **Quick Refresh (default)** — A prominent **Refresh Yesterday's Data** button runs the full pipeline for yesterday. Fast path for daily updates.
+2. **Advanced: Manual Backfill** — An expander with a date picker to select any past date (up to yesterday) and run the pipeline for historical backfilling. Includes a warning that backfilling may take longer and consumes cluster resources.
 
-After success, the cache is cleared so the Dashboard tab reflects the new data.
+Both paths run the same pipeline:
+
+- **Fetch** — Downloads raw kline ZIPs from Binance public S3 (`s3://data.binance.vision`) via boto3 (no AWS credentials or Docker daemon required). Uses symbols from `coin_metadata.csv` and `RESOLUTION` env var (default `1m`).
+- **Bronze → Silver → Gold** — Runs all Medallion stages in-process (local Spark). No `spark-submit` or cluster connection needed.
+
+After a **successful** run, the cache is cleared so the Dashboard tab reflects the new data. Pipeline logs are available in a collapsible "View pipeline log" expander.
 
 ### AI Query (Natural Language to SQL)
 
