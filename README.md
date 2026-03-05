@@ -176,6 +176,7 @@ Both run Fetch → Bronze → Silver → Gold. Cache is cleared on success. Pipe
 
 ![Dashboard](assets/dashboard.png?v=2)
 
+- **Key Market Metrics** (top of page): Top Gainer, Top Loser (24h price % change), Global 24h Volume ($1.2B format), Data Freshness ("X minutes ago"). Cached Spark aggregations on Gold.
 - **Metrics**: Symbol Price, Total Volume, 24h Price Change (formatted with $ and K/M/B suffixes).
 - **Candlestick chart**: OHLCV with volume bars; timeframe selector (1m, 1H, 4H, 1D, 1W); current price indicator.
 - **Filters**: symbol, date range, price range, min volume, table sort. **Download as CSV**.

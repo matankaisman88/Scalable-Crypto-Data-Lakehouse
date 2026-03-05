@@ -1,7 +1,7 @@
 import html
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
 import streamlit as st
@@ -51,6 +51,24 @@ def _format_volume(val: float) -> str:
     if val >= 1e3:
         return f"{val / 1e3:.2f}K"
     return f"{val:,.0f}"
+
+
+def _format_volume_currency(val: float) -> str:
+    """Format volume as currency (e.g. $1.2B)."""
+    return f"${_format_volume(val)}"
+
+
+def _format_freshness(minutes: float) -> str:
+    """Format freshness as 'X minutes ago' or 'X hours ago'."""
+    if minutes < 1:
+        return "Just now"
+    if minutes < 60:
+        return f"{int(round(minutes))} minutes ago"
+    hours = minutes / 60
+    if hours < 24:
+        return f"{hours:.1f} hours ago"
+    days = hours / 24
+    return f"{days:.1f} days ago"
 
 
 def _format_price(val: float) -> str:
@@ -134,6 +152,87 @@ def load_gold_dataframe(
         df["date"] = pd.to_datetime(df["date"]).dt.date
 
     return df
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Key Market Metrics (cached Spark aggregations on Gold)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@st.cache_data(show_spinner=False)
+def get_key_metrics() -> Optional[Dict]:
+    """
+    Compute business-oriented metrics from the Gold Delta table:
+    Top Gainer, Top Loser, Global 24h Volume, Data Freshness.
+    Uses Spark for efficient aggregations. Returns None if Gold is empty.
+    """
+    from src.utils.spark_session import get_spark_session
+
+    paths = get_paths()
+    gold_path = paths.get("gold")
+    if not gold_path:
+        return None
+
+    try:
+        spark = get_spark_session("KeyMarketMetrics")
+        gold = spark.read.format("delta").load(gold_path)
+    except Exception:
+        return None
+
+    if gold.isEmpty():
+        return None
+
+    from pyspark.sql import functions as F
+
+    # Max timestamp (microseconds) for freshness and 24h window
+    max_ts = gold.agg(F.max("timestamp").cast("long")).collect()[0][0]
+    if max_ts is None:
+        return None
+
+    # 24h window in microseconds
+    window_us = 24 * 3600 * 1_000_000
+    min_ts = max_ts - window_us
+
+    # Filter to most recent 24h
+    windowed = gold.filter(
+        (F.col("timestamp") >= min_ts) & (F.col("timestamp") <= max_ts)
+    )
+
+    # Per-symbol 24h price change: (last_close - first_close) / first_close * 100
+    # Use struct min/max to get first and last close by timestamp order
+    first_last = windowed.groupBy("symbol").agg(
+        F.min(F.struct("timestamp", "close")).alias("first"),
+        F.max(F.struct("timestamp", "close")).alias("last"),
+    )
+    pct_change = first_last.withColumn(
+        "pct_change",
+        (F.col("last.close") - F.col("first.close")) / F.col("first.close") * 100,
+    ).select("symbol", "pct_change")
+
+    rows = pct_change.collect()
+    if not rows:
+        top_gainer = ("—", 0.0)
+        top_loser = ("—", 0.0)
+    else:
+        sorted_rows = sorted(rows, key=lambda r: r["pct_change"], reverse=True)
+        top_gainer = (sorted_rows[0]["symbol"], float(sorted_rows[0]["pct_change"]))
+        top_loser = (sorted_rows[-1]["symbol"], float(sorted_rows[-1]["pct_change"]))
+
+    # Global 24h volume
+    vol_row = windowed.agg(F.coalesce(F.sum("volume"), F.lit(0)).alias("total_vol")).collect()
+    global_volume = float(vol_row[0]["total_vol"]) if vol_row else 0.0
+
+    # Data freshness: minutes since max timestamp
+    max_ts_sec = max_ts / 1_000_000
+    now_sec = datetime.now().timestamp()
+    freshness_minutes = max(0, (now_sec - max_ts_sec) / 60)
+
+    return {
+        "top_gainer": top_gainer,
+        "top_loser": top_loser,
+        "global_volume": global_volume,
+        "freshness_minutes": freshness_minutes,
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -435,8 +534,34 @@ def _render_sidebar_filters(symbols: List[str]) -> tuple:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+def _render_key_market_metrics(metrics: Optional[Dict]) -> None:
+    """Render Key Market Metrics in 4 columns at top of page."""
+    st.subheader("Key Market Metrics")
+    c1, c2, c3, c4 = st.columns([1, 1, 1, 1])
+    if metrics is None:
+        c1.metric("Top Gainer", "—", delta=None)
+        c2.metric("Top Loser", "—", delta=None)
+        c3.metric("Global 24h Volume", "—")
+        c4.metric("Data Freshness", "—")
+        st.caption("Run the pipeline to populate Gold data.")
+        return
+
+    gainer_sym, gainer_pct = metrics["top_gainer"]
+    loser_sym, loser_pct = metrics["top_loser"]
+    c1.metric("Top Gainer", gainer_sym, delta=f"+{gainer_pct:.2f}%")
+    c2.metric("Top Loser", loser_sym, delta=f"{loser_pct:.2f}%")
+    c3.metric("Global 24h Volume", _format_volume_currency(metrics["global_volume"]))
+    c4.metric("Data Freshness", _format_freshness(metrics["freshness_minutes"]))
+
+
 def _render_dashboard_tab(symbol: str, start_date: date, end_date: date) -> None:
     """Render the candlestick chart + data table."""
+    # Key Market Metrics at top (global, from Gold; cached to avoid redundant Spark jobs)
+    key_metrics = get_key_metrics()
+    _render_key_market_metrics(key_metrics)
+
+    st.divider()
+
     if not symbol:
         st.info("Select a symbol to load data.")
         return
