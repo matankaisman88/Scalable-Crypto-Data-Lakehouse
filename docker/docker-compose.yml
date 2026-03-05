@@ -37,9 +37,9 @@ services:
       - spark-master
     environment:
       - SPARK_MASTER=spark://spark-master:7077
-      - SPARK_WORKER_CORES=1
-      - SPARK_WORKER_MEMORY=4G
-      - SPARK_EXECUTOR_MEMORY=1G
+      - SPARK_WORKER_CORES=4
+      - SPARK_WORKER_MEMORY=8G
+      - SPARK_EXECUTOR_MEMORY=2G
       - SPARK_EVENTLOG_ENABLED=true
       - SPARK_EVENTLOG_DIR=/opt/spark-events
     volumes:
@@ -51,7 +51,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 4G
+          memory: 8G
     networks:
       - spark-net
 
@@ -83,12 +83,19 @@ services:
       - spark-master
     environment:
       - PYTHONPATH=/opt/spark-app
+      # Set your OpenAI API key here or in a .env file at the project root.
+      # The AI Query feature will be disabled if this variable is not provided.
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      # Optional: override the model (default: gpt-4o-mini)
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
     working_dir: /opt/spark-app
     volumes:
       - ../data:/data
       - ../data/spark-events:/opt/spark-events
       - ../src:/opt/spark-app/src
       - ../config:/opt/spark-app/config
+      # Mount scripts so the Manual Refresh button can invoke them
+      - ../scripts:/opt/spark-app/scripts
     ports:
       - "8501:8501"
     command: streamlit run src/dashboard/app.py --server.port=8501 --server.address=0.0.0.0

@@ -16,6 +16,17 @@ def get_spark_session(app_name: str = "CryptoLakehouse") -> SparkSession:
 
     builder = (
         SparkSession.builder.appName(app_name)
+        # Delta Lake extensions — set explicitly so they survive getOrCreate()
+        # even when a session already exists (configure_spark_with_delta_pip
+        # alone is not enough if it re-uses an existing session that lacks them).
+        .config(
+            "spark.sql.extensions",
+            "io.delta.sql.DeltaSparkSessionExtension",
+        )
+        .config(
+            "spark.sql.catalog.spark_catalog",
+            "org.apache.spark.sql.delta.catalog.DeltaCatalog",
+        )
         .config("spark.executor.memory", cfg.get("executor_memory", "1g"))
         .config("spark.memory.fraction", str(cfg.get("memory_fraction", 0.6)))
         .config("spark.memory.storageFraction", str(cfg.get("memory_storage_fraction", 0.5)))
@@ -32,6 +43,6 @@ def get_spark_session(app_name: str = "CryptoLakehouse") -> SparkSession:
             cfg.get("event_log_dir", paths.get("spark_events", "/opt/spark-events")),
         )
 
-    # Configure Spark with Delta Lake using the pip-installed delta-spark package.
+    # configure_spark_with_delta_pip adds the Delta JAR to the classpath.
     spark = configure_spark_with_delta_pip(builder).getOrCreate()
     return spark

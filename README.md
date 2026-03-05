@@ -140,6 +140,23 @@ docker compose -f docker/docker-compose.yml up -d dashboard
 
 - **Filters**: symbol, date range (required before load), price range, min volume, and table sort order. Includes basic metrics, candlestick chart, and **Download as CSV** to export filtered data.
 
+### Manual Data Refresh
+
+The sidebar includes a **Refresh Daily Data** button that runs the full pipeline for yesterday's date:
+
+1. **Fetch** — Downloads raw kline ZIPs from Binance public S3 (`s3://data.binance.vision`) via boto3 (no AWS credentials or Docker daemon required). Uses symbols from `coin_metadata.csv` and `RESOLUTION` env var (default `1m`).
+2. **Bronze → Silver → Gold** — Runs all Medallion stages in-process (local Spark). No `spark-submit` or cluster connection needed.
+
+After success, the cache is cleared so the Dashboard tab reflects the new data.
+
+### AI Query (Natural Language to SQL)
+
+The **AI Query** tab lets you ask questions in plain English; an LLM translates them into Spark SQL, executes against the Silver/Gold Delta tables, and explains the results.
+
+- **Requirements**: Set `OPENAI_API_KEY` in your `.env` file or environment. Optional: `OPENAI_MODEL` (default: `gpt-4o-mini`).
+- **Safety**: Only `SELECT` queries are allowed; `DROP`, `DELETE`, `UPDATE`, etc. are blocked. All queries are capped at `LIMIT 100` and encouraged to filter by `symbol` and `date` for partition pruning.
+- **Timestamp handling**: The system prompt instructs the LLM that `open_time` (Silver) and `timestamp` (Gold) are stored in **microseconds** — SQL must use `FROM_UNIXTIME(col/1000000)` for human-readable output.
+
 ## Project Structure
 
 ```
@@ -147,8 +164,8 @@ docker compose -f docker/docker-compose.yml up -d dashboard
 /docker          Dockerfile, docker-compose.yml
 /src
   /jobs         bronze_ingestion, silver_transformation, gold_aggregations
-  /dashboard   Streamlit app for Gold OHLCV visualization
-  /utils        schemas, spark_session, config_loader
+  /dashboard    Streamlit app (OHLCV chart, AI Query tab, Manual Refresh)
+  /utils        schemas, spark_session, config_loader, ai_query_helper, pipeline_orchestrator
   /quality      quality_checks, GX suites
 /scripts        fetch_data.sh, cleanup_raw.sh, run_bronze.sh, run_pipeline.sh
 /tests          conftest, test_transformations
