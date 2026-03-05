@@ -121,6 +121,11 @@ def _get_ai_helper():
 
 _CSS = """
 <style>
+/* Minimize Streamlit header (Deploy, menu, etc.) */
+header[data-testid="stHeader"] { display: none; }
+#MainMenu { visibility: hidden; }
+footer { visibility: hidden; }
+
 .main, .block-container {
     background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
     padding-top: 1.5rem;
@@ -177,6 +182,15 @@ h2, h3 {
     border: 1px solid #e2e8f0;
     box-shadow: 0 1px 3px rgba(0,0,0,0.06);
     margin-bottom: 0.5rem;
+}
+/* Tab labels: larger, bolder, clearer */
+[data-testid="stTabs"] button {
+    font-size: 1.15rem !important;
+    font-weight: 600 !important;
+    color: #0f172a !important;
+}
+[data-testid="stTabs"] button[aria-selected="true"] {
+    color: #2563eb !important;
 }
 </style>
 """

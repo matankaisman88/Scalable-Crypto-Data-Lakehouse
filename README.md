@@ -48,6 +48,36 @@ Binance S3 → Ingest (aws-cli) → Raw CSV/ZIP
 - Event logs: `http://localhost:18080`
 - Debug slow stages, skew, spills via Spark UI
 
+## Analysis: Silver vs Gold
+
+### Silver Layer (`silver_klines`)
+
+Silver holds **cleaned, deduplicated raw klines** at source resolution (1s, 1m, or 5m). It includes:
+
+- **OHLCV + metadata**: `open`, `high`, `low`, `close`, `volume`, `num_trades`
+- **Extra columns** (not in Gold): `coin_name`, `close_time`, `quote_asset_volume`, `taker_buy_base`, `taker_buy_quote`
+- **Partitioning**: `symbol`, `date`
+
+**When to use Silver:** When you need `quote_asset_volume`, `taker_buy_base`, `taker_buy_quote`, `coin_name`, or `close_time`. For standard OHLCV analytics, prefer Gold.
+
+### Gold Layer (`gold_ohlcv`)
+
+Gold holds **aggregated OHLCV** at the same resolution as Silver (1s→1s, 1m→1m, 5m→5m). It includes:
+
+- **Analytics-ready schema**: `symbol`, `timestamp`, `open`, `high`, `low`, `close`, `volume`, `num_trades`, `date`
+- **Optimized for queries**: Z-ordered by `timestamp`, partition pruning by `symbol` and `date`
+- **Partitioning**: `symbol`, `date`
+
+**When to use Gold:** For most analytics — price, volume, trades, candlestick analysis. Gold is the default for the Dashboard and AI Query.
+
+| Need                          | Use   |
+|-------------------------------|-------|
+| OHLCV, volume, num_trades     | Gold  |
+| quote_asset_volume            | Silver|
+| taker_buy_base / taker_buy_quote | Silver |
+| coin_name                     | Silver|
+| close_time                    | Silver|
+
 ## Quick Start
 
 ### Prerequisites
@@ -128,6 +158,8 @@ Open `http://localhost:18080` after job completion.
 
 ## Dashboard
 
+![Dashboard](assets/dashboard.png)
+
 - **Start the dashboard** (after running at least one Gold job so the Gold table is populated):
 
 ```bash
@@ -150,6 +182,8 @@ The sidebar includes a **Refresh Daily Data** button that runs the full pipeline
 After success, the cache is cleared so the Dashboard tab reflects the new data.
 
 ### AI Query (Natural Language to SQL)
+
+![AI Query](assets/ai-query.png)
 
 The **AI Query** tab lets you ask questions in plain English; an LLM translates them into Spark SQL, executes against the Silver/Gold Delta tables, and explains the results.
 
