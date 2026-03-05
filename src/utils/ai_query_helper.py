@@ -9,7 +9,7 @@ explanation — all in one round trip.
 import json
 import os
 import re
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
@@ -94,8 +94,22 @@ To convert to a human-readable datetime you MUST divide by 1 000 000:
 1. **ALWAYS** end every query with `LIMIT 100` (hard ceiling — reduce if aggregating).
 2. **ALWAYS** filter by `symbol` AND `date` to exploit partition pruning and avoid
    full table scans:
-       WHERE symbol = 'BTCUSDT' AND date = '2024-01-15'
+       WHERE symbol = '<symbol from user>' AND date = '<date from user>'
 3. Avoid unbounded aggregations, cross-joins, and cartesian products.
+
+## Symbol and Date Handling
+
+If the user does **not** specify a symbol (e.g. BTCUSDT, ETHUSDT, BNBUSDT) in their question,
+do **not** assume a default. Set `"error"` in your response asking the user to specify which
+symbol they want (e.g. "Please specify a symbol, e.g. BTCUSDT, ETHUSDT."). Same for date:
+if no date is given, ask for it. Only generate SQL when the user has provided both a symbol
+and a date.
+
+**Use conversation context:** When the user provides follow-up messages (e.g. "for BTCUSDT",
+"2026-03-03"), combine them with the **original question** from earlier in the conversation.
+For example: if the first message was "Which hour had the highest average close price on 2024-01-15?"
+and the user then says "for BTCUSDT", you now have symbol=BTCUSDT and date=2024-01-15 — generate
+the SQL. If they say "2026-03-03" in a later turn, use that as the date.
 
 ---
 
@@ -111,8 +125,13 @@ Only pure SELECT queries are allowed.
 Reply with ONLY a valid JSON object — no markdown fences, no extra keys:
 {{
   "sql":         "<complete Spark SQL SELECT query>",
-  "explanation": "<1–2 sentences: what the query does and what its results reveal. Bold key values (e.g. **43,127.80 USDT**) for emphasis.>"
-}}"""
+  "explanation": "<1–2 sentences: what the query does and what its results reveal. Bold key values (e.g. **43,127.80 USDT**) for emphasis.>",
+  "error":       "<optional: if user did not specify symbol or date, set this message instead of sql>"
+}}
+
+If the user did not specify a symbol, set "error" to the clarification message and leave "sql" empty.
+Do not set "error" when you can run a valid query.
+"""
 
 # Patterns that must never appear in generated SQL
 _FORBIDDEN_PATTERN = re.compile(
@@ -214,23 +233,37 @@ class AIQueryHelper:
         self._client = OpenAI(api_key=key)
         self._model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
-    def query(self, question: str) -> Dict[str, Any]:
+    def query(
+        self,
+        question: str,
+        conversation_history: Optional[List[Dict[str, str]]] = None,
+    ) -> Dict[str, Any]:
         """
         Full round-trip: NL question → LLM → SQL → Spark execution → result.
+
+        conversation_history: Optional list of {"role": "user"|"assistant", "content": "..."}
+            to provide context from previous turns. Use this so the LLM can combine
+            symbol/date from follow-up messages (e.g. "for BTCUSDT", "2026-03-03").
 
         Never raises; errors are captured in the returned ``error`` field.
         """
         sql = ""
         explanation = ""
 
+        messages = [{"role": "system", "content": _SYSTEM_PROMPT}]
+        if conversation_history:
+            for msg in conversation_history:
+                role = msg.get("role")
+                content = msg.get("content", "")
+                if role in ("user", "assistant") and content:
+                    messages.append({"role": role, "content": content})
+        messages.append({"role": "user", "content": question})
+
         try:
             # ── 1. Ask the LLM ──────────────────────────────────────────
             response = self._client.chat.completions.create(
                 model=self._model,
-                messages=[
-                    {"role": "system", "content": _SYSTEM_PROMPT},
-                    {"role": "user", "content": question},
-                ],
+                messages=messages,
                 temperature=0,
                 response_format={"type": "json_object"},
             )
@@ -239,6 +272,15 @@ class AIQueryHelper:
 
             sql = parsed.get("sql", "").strip()
             explanation = parsed.get("explanation", "")
+            llm_error = parsed.get("error", "").strip()
+
+            if llm_error:
+                return {
+                    "sql": "",
+                    "explanation": explanation,
+                    "dataframe": pd.DataFrame(),
+                    "error": llm_error,
+                }
 
             if not sql.upper().lstrip().startswith("SELECT"):
                 raise ValueError(

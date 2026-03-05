@@ -1,7 +1,7 @@
 import html
 from datetime import date, timedelta
 from pathlib import Path
-from typing import List
+from typing import Dict, List
 
 import pandas as pd
 import streamlit as st
@@ -770,12 +770,23 @@ def _render_ai_chat_tab() -> None:
         escaped = html.escape(user_input)
         st.markdown(f'<span class="user-msg-bubble">{escaped}</span>', unsafe_allow_html=True)
 
+    # ── Build conversation history for context (previous turns only) ───────
+    history: List[Dict[str, str]] = []
+    for msg in st.session_state.ai_chat_messages[:-1]:  # exclude current user msg
+        role = msg["role"]
+        if role == "user":
+            history.append({"role": "user", "content": msg["content"]})
+        else:
+            content = msg.get("error") or msg.get("explanation", "")
+            if content:
+                history.append({"role": "assistant", "content": content})
+
     # ── Call the AI helper ────────────────────────────────────────────────
     with st.chat_message("assistant"):
         with st.spinner("Thinking…"):
             try:
                 helper = _get_ai_helper()
-                result = helper.query(user_input)
+                result = helper.query(user_input, conversation_history=history)
             except ValueError as exc:
                 # API key missing or invalid at instantiation time
                 result = {
