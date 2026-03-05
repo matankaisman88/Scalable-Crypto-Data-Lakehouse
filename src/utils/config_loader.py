@@ -10,8 +10,9 @@ from typing import Any, Dict, Optional
 import yaml
 from dotenv import load_dotenv
 
-# Load .env from project root
-load_dotenv()
+# Load .env from project root. override=True ensures values from .env
+# overwrite empty env vars (e.g. OPENAI_API_KEY="" from docker-compose).
+load_dotenv(override=True)
 
 _CONFIG: Optional[Dict[str, Any]] = None
 

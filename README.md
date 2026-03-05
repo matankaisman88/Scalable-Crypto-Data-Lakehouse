@@ -29,9 +29,9 @@ Binance S3 → Ingest (aws-cli) → Raw CSV/ZIP
 - Aligns with common query patterns (filter by symbol, date range)
 - Keeps partition count manageable; avoids small-file problem
 
-**Z-Order (symbol, timestamp)**
+**Z-Order (timestamp only)**
 
-- `OPTIMIZE ... ZORDER BY (symbol, timestamp)` improves predicate pushdown
+- `OPTIMIZE ... ZORDER BY (timestamp)` improves predicate pushdown (partition columns like `symbol` cannot be Z-ordered)
 - Run only on newly merged partitions to avoid full-table rewrites
 
 **MERGE Idempotency**
@@ -153,9 +153,11 @@ After success, the cache is cleared so the Dashboard tab reflects the new data.
 
 The **AI Query** tab lets you ask questions in plain English; an LLM translates them into Spark SQL, executes against the Silver/Gold Delta tables, and explains the results.
 
-- **Requirements**: Set `OPENAI_API_KEY` in your `.env` file or environment. Optional: `OPENAI_MODEL` (default: `gpt-4o-mini`).
-- **Safety**: Only `SELECT` queries are allowed; `DROP`, `DELETE`, `UPDATE`, etc. are blocked. All queries are capped at `LIMIT 100` and encouraged to filter by `symbol` and `date` for partition pruning.
-- **Timestamp handling**: The system prompt instructs the LLM that `open_time` (Silver) and `timestamp` (Gold) are stored in **microseconds** — SQL must use `FROM_UNIXTIME(col/1000000)` for human-readable output.
+- **Requirements**: Add `OPENAI_API_KEY=sk-...` to `.env` at the project root. The dashboard mounts `.env` and loads it with `override=True` so the key is available in the container. Restart the dashboard after adding the key. Optional: `OPENAI_MODEL` (default: `gpt-4o-mini`).
+- **Gold vs Silver**: Gold is the default for analytics (OHLCV, volume, trades). Use Silver only when you need extra columns: `quote_asset_volume`, `taker_buy_base`, `taker_buy_quote`, `coin_name`, or `close_time`. Both tables share the same resolution (1s, 1m, or 5m depending on fetch; default is 1m).
+- **Example questions**: The tab includes expandable examples for Gold (price, volume, candles) and Silver (quote asset volume, taker buy, coin names).
+- **Safety**: Only `SELECT` queries are allowed; `DROP`, `DELETE`, `UPDATE`, etc. are blocked. All queries are capped at `LIMIT 100` and must filter by `symbol` and `date` for partition pruning.
+- **Timestamp handling**: `open_time` (Silver) and `timestamp` (Gold) are stored in **microseconds** — SQL must use `FROM_UNIXTIME(col/1000000)` for human-readable output.
 
 ## Project Structure
 

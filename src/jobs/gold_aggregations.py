@@ -137,7 +137,7 @@ def run(
             if d_str:
                 DeltaTable.forPath(spark, gold_path).optimize().where(
                     f"date = '{d_str}'"
-                ).executeZOrderBy(["symbol", "timestamp"])
+                ).executeZOrderBy(["timestamp"])
 
 
 if __name__ == "__main__":

@@ -466,15 +466,16 @@ def _render_ai_chat_tab() -> None:
 
     # ── Example prompts ───────────────────────────────────────────────────
     with st.expander("Example questions", expanded=False):
-        examples = [
-            "What was the highest closing price for BTCUSDT on 2024-01-15?",
-            "Show me the 10 most recent 5-minute candles for ETHUSDT on 2024-01-20.",
-            "What is the total trading volume for BTCUSDT on 2024-01-10?",
-            "Which hour had the highest average close price for BTCUSDT on 2024-01-15?",
-            "Show the open, high, low, close for BNBUSDT between 14:00 and 15:00 on 2024-01-18.",
-        ]
-        for ex in examples:
-            st.markdown(f"- *{ex}*")
+        st.markdown("**Gold** — Clean, analytics-ready (OHLCV, volume, trades). Use for most questions.")
+        st.markdown("- *What was the highest and lowest price for BTCUSDT on 2024-01-15?*")
+        st.markdown("- *What is the total trading volume for ETHUSDT on 2024-01-10?*")
+        st.markdown("- *Show the 10 most recent candles (open, high, low, close) for BNBUSDT on 2024-01-18.*")
+        st.markdown("- *Which hour had the highest average close price for BTCUSDT on 2024-01-15?*")
+        st.markdown("")
+        st.markdown("**Silver** — Same data + extra columns (quote_asset_volume, taker_buy_base/quote, coin_name). Use only when you need these.")
+        st.markdown("- *What was the total quote asset volume for BTCUSDT on 2024-01-15?*")
+        st.markdown("- *Show taker buy base and taker buy quote for ETHUSDT on 2024-01-20.*")
+        st.markdown("- *List symbols with their coin names from the silver table on 2024-01-18.*")
 
     # ── Chat session state ────────────────────────────────────────────────
     if "ai_chat_messages" not in st.session_state:

@@ -81,6 +81,8 @@ services:
     container_name: dashboard
     depends_on:
       - spark-master
+    env_file:
+      - ../.env
     environment:
       - PYTHONPATH=/opt/spark-app
       # Set your OpenAI API key here or in a .env file at the project root.
@@ -96,6 +98,8 @@ services:
       - ../config:/opt/spark-app/config
       # Mount scripts so the Manual Refresh button can invoke them
       - ../scripts:/opt/spark-app/scripts
+      # Mount .env so load_dotenv() can load OPENAI_API_KEY (env_file path can fail on Windows)
+      - ../.env:/opt/spark-app/.env:ro
     ports:
       - "8501:8501"
     command: streamlit run src/dashboard/app.py --server.port=8501 --server.address=0.0.0.0

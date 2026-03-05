@@ -59,11 +59,19 @@ _SYSTEM_PROMPT = f"""You are a Spark SQL expert embedded in a cryptocurrency OHL
 
 ## Available Tables
 
-### silver_klines — 1-second raw klines from Binance
+Resolution (1s, 1m, or 5m) depends on what was ingested — both tables share the same granularity.
+Default fetch uses 1m, so Silver and Gold are typically 1-minute candles.
+
+### silver_klines — Raw klines from Binance (source resolution: 1s, 1m, or 5m)
+Extra columns: coin_name, close_time, quote_asset_volume, taker_buy_base, taker_buy_quote.
 {_SILVER_DDL}
 
-### gold_ohlcv — 5-minute aggregated OHLCV (Gold layer)
-{_GOLD_DDL}
+### gold_ohlcv — Aggregated OHLCV (same resolution as Silver: 1s→1s, 1m→1m, 5m→5m)
+Simpler schema: symbol, timestamp, OHLCV, num_trades, date.
+
+**When to use which:** Use silver_klines when the user asks for coin_name, close_time, quote_asset_volume,
+taker_buy_base, taker_buy_quote, or explicitly mentions "silver" or "raw" data. Use gold_ohlcv for
+simple OHLCV/volume/trades questions when no Silver-specific columns are needed.
 
 ---
 
