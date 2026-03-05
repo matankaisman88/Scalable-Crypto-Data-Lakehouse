@@ -14,7 +14,7 @@ RUN pip install --no-cache-dir \
     "streamlit>=1.36.0" \
     "plotly>=5.20.0" \
     "deltalake>=0.17.0" \
-    "openai>=1.0.0"
+    "openai>=1.0.0,<2.0.0"
 
 USER ${spark_uid}
 
