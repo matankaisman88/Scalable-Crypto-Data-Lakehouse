@@ -199,18 +199,24 @@ div[data-testid="stSidebar"] {
 }
 [data-testid="stSidebar"] button[kind="primary"],
 [data-testid="stSidebar"] .stButton > button {
-    background: #334155 !important;
-    color: #f8fafc !important;
+    background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%) !important;
+    color: #ffffff !important;
     border-radius: 8px !important;
-    font-weight: 500 !important;
-    border: 1px solid #475569 !important;
+    font-weight: 600 !important;
+    border: none !important;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2) !important;
 }
 [data-testid="stSidebar"] button:hover {
-    background: #475569 !important;
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%) !important;
+    color: #ffffff !important;
 }
 [data-testid="stSidebar"] [data-baseweb="select"] {
     background: #334155 !important;
     color: #f8fafc !important;
+}
+[data-testid="stSidebar"] .stExpander summary {
+    color: #000000 !important;
+    font-weight: 600 !important;
 }
 
 /* Metric cards: prominent, rounded */
@@ -335,6 +341,7 @@ def _render_refresh_button() -> None:
     target = yesterday()
     if st.sidebar.button(
         f"Refresh Daily Data ({target})",
+        type="primary",
         help=(
             "Runs fetch_data.sh (best-effort) then run_pipeline.sh for yesterday. "
             "Requires Docker daemon access for the fetch step."
