@@ -215,17 +215,55 @@ Ask questions in plain English; an LLM translates to Spark SQL and explains resu
 ## Project Structure
 
 ```
-/config          config.yaml
-/.streamlit      config.toml (dashboard theme)
-/docker          Dockerfile, docker-compose.yml
-/src
-  /jobs         bronze_ingestion, silver_transformation, gold_aggregations
-  /dashboard    Streamlit app (OHLCV chart, AI Query tab, Manual Refresh)
-  /utils        schemas, spark_session, config_loader, ai_query_helper, pipeline_orchestrator
-  /quality      quality_checks, GX suites
-/scripts        fetch_data.sh, drop_raw.sh, cleanup_raw.sh, run_bronze.sh, run_pipeline.sh
-/tests          conftest, test_transformations
-/data           bronze, silver, gold, raw, spark-events
+.
+├── config/
+│   └── config.yaml          # Externalized paths and Spark tunings (AQE, memory, GX, Binance S3)
+│
+├── data/
+│   ├── raw/                 # Landing zone for CSV/ZIP kline files (Binance Vision format)
+│   ├── bronze/              # Raw data in Delta format (partitioned by ingestion_date)
+│   ├── silver/              # Cleaned/deduplicated data (partitioned by symbol, date)
+│   ├── gold/                # Aggregated OHLCV data (Z-ordered by timestamp)
+│   └── metadata/            # Reference data (e.g. coin_metadata.csv)
+│
+├── docker/
+│   ├── Dockerfile           # Spark 3.5 + Delta + GX + Streamlit environment
+│   └── docker-compose.yml   # Multi-service: Spark Master/Worker, History Server, Dashboard, Ingest (aws-cli)
+│
+├── great_expectations/
+│   ├── expectations/        # GX suites (e.g. silver_ohlcv_suite.json)
+│   └── checkpoints/         # Checkpoint configs (e.g. silver_to_gold_checkpoint.yml)
+│
+├── src/
+│   ├── dashboard/
+│   │   └── app.py           # Streamlit UI with Plotly charts, market metrics, AI Query, Manual Refresh
+│   │
+│   ├── jobs/
+│   │   ├── bronze_ingestion.py     # Bulk raw ingestion; symbol from path via input_file_name()
+│   │   ├── silver_transformation.py # Deduplication, broadcast join with metadata, MERGE
+│   │   └── gold_aggregations.py   # Incremental OHLCV merge, Z-order, resolution from Silver
+│   │
+│   ├── quality/
+│   │   └── quality_checks.py # Rule-based validation (fail-fast); used before Gold write
+│   │
+│   └── utils/
+│       ├── ai_query_helper.py     # NL-to-SQL via LLM against Delta tables
+│       ├── config_loader.py       # Loads config.yaml and .env; used by all jobs
+│       ├── pipeline_orchestrator.py # Fetch → Bronze → Silver → Gold for dashboard refresh
+│       ├── schemas.py             # StructTypes for Bronze, Silver, Gold, metadata
+│       └── spark_session.py       # SparkSession builder with Delta extensions
+│
+├── scripts/
+│   ├── run_pipeline.sh      # Full Medallion: Bronze → Silver → Gold (calls run_*.sh)
+│   ├── run_bronze.sh        # Bronze stage only
+│   ├── run_silver.sh        # Silver stage only
+│   ├── run_gold.sh          # Gold stage only
+│   ├── drop_raw.sh          # Remove raw files after pipeline (data in Bronze)
+│   └── fetch_data.sh        # Download klines from Binance S3 (alternative to pipeline fetch)
+│
+└── tests/
+    ├── conftest.py          # Pytest fixtures (e.g. SparkSession)
+    └── test_transformations.py # Transformation tests
 ```
 
 ## Testing
