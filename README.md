@@ -216,8 +216,16 @@ Ask questions in plain English; an LLM translates to Spark SQL and explains resu
 
 ```
 .
+├── .env.example             # Env template; copy to .env and set OPENAI_API_KEY for AI Query
 ├── config/
 │   └── config.yaml          # Externalized paths and Spark tunings (AQE, memory, GX, Binance S3)
+│
+├── assets/                  # Screenshots for README (dashboard, AI Query UI)
+│   ├── dashboard.png
+│   └── ai-query.png
+│
+├── .streamlit/
+│   └── config.toml          # Dashboard theme (dark sidebar, light main)
 │
 ├── data/
 │   ├── raw/                 # Landing zone for CSV/ZIP kline files (Binance Vision format)
