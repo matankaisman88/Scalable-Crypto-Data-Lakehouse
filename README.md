@@ -48,6 +48,12 @@ Binance S3 → Ingest (aws-cli) → Raw CSV/ZIP
 - Event logs: `http://localhost:18080`
 - Debug slow stages, skew, spills via Spark UI
 
+### Schema Evolution & Enforcement
+
+- **Strict Schema Ingestion**: The system uses explicit `StructType` definitions in `src/utils/schemas.py` for all layers.
+- **Resilience to CSV Changes**: If the source (e.g., Binance) adds new columns to the raw CSV files, the `bronze_ingestion` job will ignore them by default. This prevents unexpected "Schema Drift" from breaking downstream transformations.
+- **Manual Evolution**: To support new columns, the schemas in `src/utils/schemas.py` must be updated manually. This ensures a "Data Contract" remains in place across the Medallion layers.
+
 ## Analysis: Silver vs Gold
 
 ### Silver Layer (`silver_klines`)
