@@ -4,10 +4,9 @@ Unit tests for Gold OHLCV aggregation logic.
 
 from pyspark.sql.functions import (
     col,
-    first,
     floor,
-    last,
     lit,
+    struct,
     to_date,
     to_timestamp,
 )
@@ -35,10 +34,10 @@ def _aggregate_ohlcv(df):
     return (
         df.groupBy("symbol", "window_start")
         .agg(
-            first("open").alias("open"),
+            spark_min(struct("open_time", "open"))["open"].alias("open"),
             spark_max("high").alias("high"),
             spark_min("low").alias("low"),
-            last("close").alias("close"),
+            spark_max(struct("close_time", "close"))["close"].alias("close"),
             spark_sum("volume").alias("volume"),
             spark_sum("num_trades").alias("num_trades"),
         )
